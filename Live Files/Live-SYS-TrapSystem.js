@@ -27,18 +27,18 @@ const TrapSystem = {
         DEBUG: false, 
         DEFAULT_GRID_SIZE: 70,
         DEFAULT_SCALE: 5,
-        MIN_MOVEMENT_FACTOR: 0.1, // Minimum movement distance as a factor of grid size to trigger check
+        MIN_MOVEMENT_FACTOR: 0.3, // Minimum movement distance as a factor of grid size to trigger check
         AURA_COLORS: {
-            ARMED: "#00ff00",       // Green
-            ARMED_INTERACTION: "#6aa84f", // Light Green (for interactive traps)
-            DISARMED: "#ff0000",    // Red
-            DISARMED_INTERACTION: "#a61c00", // Dark Red (for interactive traps)
-            PAUSED: "#ffa500",      // Orange
-            DETECTION: "#808080",   // Subtle gray for detection range
-            DETECTED: "#c0c0c0",     // Lighter gray when detected
-            PASSIVE_DISABLED: "#5b0f00" // Purple for when passive detection is toggled off
+            ARMED: "#00ff00",                   // Green
+            ARMED_INTERACTION: "#6aa84f",       // Light Green (for interactive traps)
+            DISARMED: "#ff0000",                // Red
+            DISARMED_INTERACTION: "#a61c00",    // Dark Red (for interactive traps)
+            PAUSED: "#ffa500",                  // Orange
+            DETECTION: "#808080",               // Subtle gray for detection range
+            DETECTED: "#c0c0c0",                // Lighter gray when detected
+            PASSIVE_DISABLED: "#5b0f00"         // Purple for when passive detection is toggled off
         },
-        // Default values for a new trap
+
         defaults: {
             trap: {
                 type: "standard",
@@ -63,8 +63,8 @@ const TrapSystem = {
             }
         },
         aura: {
-            TARGET_RADIUS_GRID_UNITS: 1, // Target visual radius in grid units (e.g., 1.5 for 3-grid diameter)
-            VISIBILITY_BOOST_GU: 0.3 // Amount in Grid Units to boost the visual target radius if the original target would be at or within the token's edge.
+            TARGET_RADIUS_GRID_UNITS: 1,    // Target visual radius in grid units (e.g., 1.5 for 3-grid diameter)
+            VISIBILITY_BOOST_GU: 0.3,       // Amount in Grid Units to boost the visual target radius if the original target would be at or within the token's edge.
         },
         messages: {
             templates: {
@@ -127,7 +127,7 @@ const TrapSystem = {
             "Charisma Saving Throw": "🛡️💬"
         },
         MACRO_TAGS: {
-            trap: "The trap token itself (the object representing the trap)", // formatted as <&trap>
+            trap: "The trap token itself (the object representing the trap)",   // formatted as <&trap>
             trapped: "The token that is currently trapped (the victim/target)", // formatted as <&trapped>
             // Add more as needed, e.g.:
             // bystander: "A token affected by splash/area effects",
@@ -136,11 +136,11 @@ const TrapSystem = {
     },
 
     state: {
-        lockedTokens: {},         // Movement-locked tokens
-        testTrapTokens: new Set(),// If using test traps
-        safeMoveTokens: new Set(),// Tokens that get a free move after unlocking
-        triggersEnabled: true,    // Global on/off
-        originalMacros: {},       // If you had any macro backups
+        lockedTokens: {},           // Movement-locked tokens
+        testTrapTokens: new Set(),  // If using test traps
+        safeMoveTokens: new Set(),  // Tokens that get a free move after unlocking
+        triggersEnabled: true,      // Global on/off
+        originalMacros: {},         // If you had any macro backups
         warnedInvalidGridPages: {}, // [NEW] To track pages already warned for invalid grid
 
         // From InteractionMenu:
@@ -150,15 +150,15 @@ const TrapSystem = {
         displayDCForCheck: {}, // key: playerid, value: true/false
 
         // [NEW] From MacroExport
-        macroExportStates: {},     // Stores state for tokens (graphic, door/window, or pathv2)
-        macroExportDoorStates: {},     // Stores door states before changes
-        macroExportedMacros: [], // Stores exported macro info
+        macroExportStates: {},               // Stores state for tokens (graphic, door/window, or pathv2)
+        macroExportDoorStates: {},           // Stores door states before changes
+        macroExportedMacros: [],             // Stores exported macro info
         macroExportTokensOrderedToFront: [], // Tokens moved to front
         macroExportTokensOrderedToBack: [],  // Tokens moved to back
         macroExportRecordOrdering: false,    // Flag for ordering listeners
 
         // State for passive perception
-        passivelyNoticedTraps: {}, // Initialized here
+        passivelyNoticedTraps: {},        // Initialized here
         recentlyNoticedPlayerMessages: {} // { charId: [{ messageContent: string, timestamp: number }] }
     },
 

@@ -1,5 +1,5 @@
 /**
- * TokenFX_Refactored.js
+ * TokenFX.js
  * ToDo: Fix Rocket and Missile FX to work with targets. Wait for roll20 dev update. use custom FX for these.
  * Consolidated token effects, triggers, and delay system for Roll20
  */
@@ -124,7 +124,6 @@
  *     Based on `syncMode`, either `TokenFX.fx.applyFxLoop_sync(loopID)` or
  *     `TokenFX.fx.applyFxLoop_desync(loopID)` is called to start the FX.
  *
- *
  * II. DESYNCHRONIZED MODE (`SYNC[desync]` or default):
  *     (`TokenFX.fx.applyFxLoop_desync`)
  *
@@ -155,7 +154,6 @@
  *    - There's no waiting for A to finish before B starts its delay, or vice-versa.
  *    - If GR was 2 and GD was 5s: After A & B are *initially scheduled*, the script waits 5s,
  *      then re-schedules A (to start at 5s from global cycle start) and B (to start at 8s from global cycle start).
- *
  *
  * III. SYNCHRONIZED MODE (`SYNC[sync]`):
  *      (`TokenFX.fx.applyFxLoop_sync`)
@@ -216,7 +214,6 @@
  *      - Starts 5 seconds *after* both A and B finished in Global Cycle 1.
  *      - Token A & B spawn their FX again.
  *
- *
  * IV. STOPPING FX (`!stopFxLoop [LoopID]` and `!stopAllFx`):
  *
  *  - `!stopFxLoop [LoopID]`: Clears all `setTimeout` handles (both global and
@@ -224,12 +221,6 @@
  *    removes the loop data from `TokenFX.state.activeFxLoops`.
  *  - `!stopAllFx`: Iterates through all `loopID`s in `activeFxLoops` and stops each one.
  *
- * This system allows for a range of effects, from simple, single FX spawns to
- * complex, multi-token, repeating, and synchronized/desynchronized waves of effects.
- * Understanding the interplay of TD, TR, TI with GR, GD, and SYNC is key.
- */
-
-/**
  * V. AREA TRIGGERS & CHAIN REACTIONS (`TokenFX.trigger`):
  *    Commands: `!triggerByTag`, `!triggerByTagChain`, `!stopChains`
  *
@@ -276,7 +267,6 @@
  *  6. `!stopChains`:
  *     - Manually stops any ongoing chain reaction sequence.
  *
- *
  * VI. DELAYED COMMAND EXECUTION (`TokenFX.delay`):
  *     Command: `!Delay [seconds] {command_to_run}` or `!delay [seconds] {command_to_run}`
  *
@@ -306,6 +296,9 @@
  *       a space-separated list of their token IDs.
  *     - Useful for quickly grabbing IDs to use in other API commands or script parameters.
  *
+ * This system allows for a range of effects, from simple, single FX spawns to
+ * complex, multi-token, repeating, and synchronized/desynchronized waves of effects.
+ * Understanding the interplay of TD, TR, TI with GR, GD, and SYNC is key.
  */
 
 const thePlayerIsGM = (playerid) => {
