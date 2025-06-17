@@ -1953,8 +1953,7 @@ const TrapSystem = {
             for(let trapToken of trapTokens) {
                 TrapSystem.utils.log(`[DEBUG] Checking trap: ${trapToken.id} (${trapToken.get('name') || 'Unnamed'}) at L:${trapToken.get('left')}, T:${trapToken.get('top')}, W:${trapToken.get('width')}, H:${trapToken.get('height')}`, 'debug'); // Log trap dimensions
                 const data = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
-                if(!data || data.currentUses <= 0 
-                   || trapToken.get("aura1_color") !== TrapSystem.config.AURA_COLORS.ARMED) {
+                if(!data || !data.isArmed || data.currentUses <= 0) {
                     continue;
                 }
 
@@ -2505,10 +2504,12 @@ const TrapSystem = {
             }
 
             const processMacro = (macroCmd) => {
-                if (!macroCmd || typeof macroCmd !== 'string' || macroCmd.toLowerCase() === 'none') return macroCmd;
+                if (!macroCmd || typeof macroCmd !== 'string' || macroCmd.trim().toLowerCase() === 'none' || macroCmd.trim() === '') {
+                    return null;
+                }
+
                 let content = macroCmd.trim();
 
-                // If the content is already quoted, handle it carefully
                 if (content.startsWith('"') && content.endsWith('"')) {
                     content = content.substring(1, content.length - 1).trim();
                 }
@@ -2521,32 +2522,38 @@ const TrapSystem = {
                 }
                 if (content.startsWith('#')) {
                     const macroName = content.substring(1).trim();
-                    if (findObjs({ _type: "macro", name: macroName }).length > 0) {
-                        return content; // It's a valid macro, return as is with #
+                    if (findObjs({ _type: "macro", name: macroName }).length === 0) {
+                        TrapSystem.utils.chat(`⚠️ Warning: The macro named "${macroName}" was not found. Please check for typos in the trap's GM Notes.`);
                     }
+                    return content;
                 }
-                // Check if it's a macro name without the prefix
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
-                    return '#' + content; // Add prefix
+                    return '#' + content;
                 }
-
-                // If none of the above, it's plain text. Wrap it in quotes.
                 return `"${content}"`;
             };
+
+            const primaryMacroProcessed = processMacro(mainMacro);
+            if (!primaryMacroProcessed) {
+                TrapSystem.utils.chat('❌ Error: A primary macro, command, or text is required for a standard trap!');
+                return;
+            }
 
             let parts = [
                 "type:[standard]",
                 `uses:[${maxUses}/${maxUses}]`,
                 "armed:[on]",
-                `primaryMacro:[${processMacro(mainMacro)}]`
+                `primaryMacro:[${primaryMacroProcessed}]`
             ];
 
             let optionsArray = [];
-            if (optionalMacro2 && optionalMacro2.toLowerCase() !== "none") {
-                optionsArray.push(processMacro(optionalMacro2.trim()));
+            const opt2Processed = processMacro(optionalMacro2);
+            if (opt2Processed) {
+                optionsArray.push(opt2Processed);
             }
-            if (optionalMacro3 && optionalMacro3.toLowerCase() !== "none") {
-                optionsArray.push(processMacro(optionalMacro3.trim()));
+            const opt3Processed = processMacro(optionalMacro3);
+            if (opt3Processed) {
+                optionsArray.push(opt3Processed);
             }
             if (optionsArray.length > 0) {
                 parts.push(`options:[${optionsArray.join(';')}]`);
@@ -2559,7 +2566,7 @@ const TrapSystem = {
                     movementSetting = movLower === "grid" ? "0,0" : "center";
                 } else if (movLower.match(/^\d+,\d+$/)) {
                     movementSetting = movLower;
-                } // Default is "intersection"
+                }
             }
             parts.push(`position:[${movementSetting}]`);
             parts.push(`movementTrigger:[on]`);
@@ -2596,7 +2603,7 @@ const TrapSystem = {
                 return;
             }
             
-            this.getTrapStatus(token); // Show status using the new format
+            this.getTrapStatus(token);
         },
 
         // Setup an "interaction" trap
@@ -2611,12 +2618,30 @@ const TrapSystem = {
                 TrapSystem.utils.chat('❌ Error: Uses must be a positive number!');
                 return;
             }
+
+            const existingNotes = token.get("gmnotes");
+            let existingPosition = "intersection";
+
+            try {
+                if (existingNotes) {
+                    const decodedNotes = decodeURIComponent(existingNotes);
+                    const match = decodedNotes.match(/position:\[([^\]]+)\]/);
+                    if (match && match[1]) {
+                        existingPosition = match[1];
+                        TrapSystem.utils.log(`[setupInteractionTrap] Found existing position: ${existingPosition}`, 'debug');
+                    }
+                }
+            } catch (e) {
+                // Ignore errors, just means notes weren't a valid trap. We'll use the default.
+            }
             
             const processMacro = (macroCmd) => {
-                if (!macroCmd || typeof macroCmd !== 'string' || macroCmd.toLowerCase() === 'none') return macroCmd;
+                if (!macroCmd || typeof macroCmd !== 'string' || macroCmd.trim().toLowerCase() === 'none' || macroCmd.trim() === '') {
+                    return null;
+                }
+
                 let content = macroCmd.trim();
 
-                // If the content is already quoted, handle it carefully
                 if (content.startsWith('"') && content.endsWith('"')) {
                     content = content.substring(1, content.length - 1).trim();
                 }
@@ -2629,16 +2654,16 @@ const TrapSystem = {
                 }
                 if (content.startsWith('#')) {
                     const macroName = content.substring(1).trim();
-                    if (findObjs({ _type: "macro", name: macroName }).length > 0) {
-                        return content; // It's a valid macro, return as is with #
+                    if (findObjs({ _type: "macro", name: macroName }).length === 0) {
+                        // The user requested a warning for potentially misspelled macros.
+                        TrapSystem.utils.chat(`⚠️ Warning: The macro named "${macroName}" was not found. Please check for typos in the trap's GM Notes.`);
                     }
+                    // Return the macro name (e.g., #TestMacro) without quotes.
+                    return content;
                 }
-                // Check if it's a macro name without the prefix
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
-                    return '#' + content; // Add prefix
+                    return '#' + content;
                 }
-
-                // If none of the above, it's plain text. Wrap it in quotes.
                 return `"${content}"`;
             };
 
@@ -2647,15 +2672,18 @@ const TrapSystem = {
                 `uses:[${maxUses}/${maxUses}]`,
                 "armed:[on]"
             ];
-
-            if (primaryMacro && primaryMacro.toLowerCase() !== "none") {
-                parts.push(`primaryMacro:[${processMacro(primaryMacro)}]`);
+            
+            const primaryMacroProcessed = processMacro(primaryMacro);
+            if (primaryMacroProcessed) {
+                parts.push(`primaryMacro:[${primaryMacroProcessed}]`);
             }
-            if (successMacro && successMacro.toLowerCase() !== "none") {
-                parts.push(`successMacro:[${processMacro(successMacro)}]`);
+            const successMacroProcessed = processMacro(successMacro);
+            if (successMacroProcessed) {
+                parts.push(`successMacro:[${successMacroProcessed}]`);
             }
-            if (failureMacro && failureMacro.toLowerCase() !== "none") {
-                parts.push(`failureMacro:[${processMacro(failureMacro)}]`);
+            const failureMacroProcessed = processMacro(failureMacro);
+            if (failureMacroProcessed) {
+                parts.push(`failureMacro:[${failureMacroProcessed}]`);
             }
 
             let checksArrayStr = [];
@@ -2684,7 +2712,7 @@ const TrapSystem = {
             parts.push(`movementTrigger:[${movementIsEnabled ? 'on' : 'off'}]`);
             const autoTriggerIsEnabled = (typeof autoTriggerEnabled === 'string' && autoTriggerEnabled.toLowerCase() === 'true') || autoTriggerEnabled === true;
             parts.push(`autoTrigger:[${autoTriggerIsEnabled ? 'on' : 'off'}]`);
-            parts.push(`position:[intersection]`); // Default for interactions
+            parts.push(`position:[${existingPosition}]`);
 
             const trapConfigString = `{!traptrigger ${parts.join(' ')}}`;
 
