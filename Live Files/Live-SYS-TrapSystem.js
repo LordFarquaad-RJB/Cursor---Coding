@@ -1130,8 +1130,8 @@ const TrapSystem = {
                 '{{name=🎯 Trap System Help}}',
                 '{{About=The Trap System allows you to create and manage traps, skill checks, and interactions. Traps can be triggered by movement or manually.}}',
                 '{{Setup Traps=',
-                '🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, Text} ?{Optional Macro 2|None} ?{Optional Macro 3|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
-                '[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, Text|None} ?{Success Macro|None} ?{Failure Macro|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Auto Trigger|false|true})',
+                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
+                '[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Auto Trigger|false|true})',
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
                 "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, Text} ?{Optional Macro 2|None} ?{Optional Macro 3|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                 '{{Trap Control=',
@@ -2503,50 +2503,54 @@ const TrapSystem = {
                 TrapSystem.utils.chat('❌ Error: Uses must be a positive number!');
                 return;
             }
-            // Validate mainMacro, allowing for direct API commands (starting with ! or $)
-            if (!mainMacro || (!mainMacro.startsWith('!') && !mainMacro.startsWith('$') && !findObjs({ _type: "macro", name: mainMacro })[0])) {
-                TrapSystem.utils.chat(`❌ Error: Main Macro "${mainMacro}" not found or not provided!`);
-                TrapSystem.utils.log(`[setupTrap] Failed: Main Macro "${mainMacro}" not found.`, 'error');
-                return;
-            }
 
-            // Validate optional macros if provided, allowing for direct API commands (starting with ! or $)
-            if (optionalMacro2 && optionalMacro2.toLowerCase() !== "none" && !optionalMacro2.startsWith('!') && !optionalMacro2.startsWith('$') && !findObjs({ _type: "macro", name: optionalMacro2 })[0]) {
-                    TrapSystem.utils.chat(`❌ Error: Optional Macro 2 "${optionalMacro2}" not found!`);
-                TrapSystem.utils.log(`[setupTrap] Failed: Optional Macro 2 "${optionalMacro2}" not found.`, 'error');
-                    return;
-                }
-            if (optionalMacro3 && optionalMacro3.toLowerCase() !== "none" && !optionalMacro3.startsWith('!') && !optionalMacro3.startsWith('$') && !findObjs({ _type: "macro", name: optionalMacro3 })[0]) {
-                    TrapSystem.utils.chat(`❌ Error: Optional Macro 3 "${optionalMacro3}" not found!`);
-                TrapSystem.utils.log(`[setupTrap] Failed: Optional Macro 3 "${optionalMacro3}" not found.`, 'error');
-                    return;
+            const processMacro = (macroCmd) => {
+                if (!macroCmd || typeof macroCmd !== 'string' || macroCmd.toLowerCase() === 'none') return macroCmd;
+                let content = macroCmd.trim();
+
+                // If the content is already quoted, handle it carefully
+                if (content.startsWith('"') && content.endsWith('"')) {
+                    content = content.substring(1, content.length - 1).trim();
                 }
 
-            // Helper to sanitize macro commands for storage
-            const sanitizeMacro = (macroCmd) => {
-                if (typeof macroCmd === 'string' && macroCmd.startsWith('!')) {
-                    return '$' + macroCmd.substring(1);
+                if (content.startsWith('!')) {
+                    return `"$${content.substring(1)}"`;
                 }
-                return macroCmd;
+                if (content.startsWith('$')) {
+                    return `"${content}"`;
+                }
+                if (content.startsWith('#')) {
+                    const macroName = content.substring(1).trim();
+                    if (findObjs({ _type: "macro", name: macroName }).length > 0) {
+                        return content; // It's a valid macro, return as is with #
+                    }
+                }
+                // Check if it's a macro name without the prefix
+                if (findObjs({ _type: "macro", name: content }).length > 0) {
+                    return '#' + content; // Add prefix
+                }
+
+                // If none of the above, it's plain text. Wrap it in quotes.
+                return `"${content}"`;
             };
 
             let parts = [
                 "type:[standard]",
                 `uses:[${maxUses}/${maxUses}]`,
                 "armed:[on]",
-                `primaryMacro:[${sanitizeMacro(mainMacro)}]`
+                `primaryMacro:[${processMacro(mainMacro)}]`
             ];
 
             let optionsArray = [];
             if (optionalMacro2 && optionalMacro2.toLowerCase() !== "none") {
-                optionsArray.push(sanitizeMacro(optionalMacro2.trim()));
-                }
+                optionsArray.push(processMacro(optionalMacro2.trim()));
+            }
             if (optionalMacro3 && optionalMacro3.toLowerCase() !== "none") {
-                optionsArray.push(sanitizeMacro(optionalMacro3.trim()));
+                optionsArray.push(processMacro(optionalMacro3.trim()));
             }
             if (optionsArray.length > 0) {
                 parts.push(`options:[${optionsArray.join(';')}]`);
-                }
+            }
 
             let movementSetting = "intersection"; 
             if (movement) {
@@ -2607,28 +2611,35 @@ const TrapSystem = {
                 TrapSystem.utils.chat('❌ Error: Uses must be a positive number!');
                 return;
             }
-            // Validate macros, allowing for direct API commands (starting with ! or $)
-            if (primaryMacro && primaryMacro.toLowerCase() !== "none" && !primaryMacro.startsWith('!') && !primaryMacro.startsWith('$') && !findObjs({ _type: "macro", name: primaryMacro })[0]) {
-                TrapSystem.utils.chat(`❌ Error: Primary Macro "${primaryMacro}" not found!`);
-                return;
-            }
-            if (successMacro && successMacro.toLowerCase() !== "none" && !successMacro.startsWith('!') && !successMacro.startsWith('$') && !findObjs({ _type: "macro", name: successMacro })[0]) {
-                TrapSystem.utils.chat(`❌ Error: Success Macro "${successMacro}" not found!`);
-                TrapSystem.utils.log(`[setupInteractionTrap] Failed: Success Macro "${successMacro}" not found.`, 'error');
-                return;
-            }
-            if (failureMacro && failureMacro.toLowerCase() !== "none" && !failureMacro.startsWith('!') && !failureMacro.startsWith('$') && !findObjs({ _type: "macro", name: failureMacro })[0]) {
-                TrapSystem.utils.chat(`❌ Error: Failure Macro "${failureMacro}" not found!`);
-                 TrapSystem.utils.log(`[setupInteractionTrap] Failed: Failure Macro "${failureMacro}" not found.`, 'error');
-                return;
-            }
+            
+            const processMacro = (macroCmd) => {
+                if (!macroCmd || typeof macroCmd !== 'string' || macroCmd.toLowerCase() === 'none') return macroCmd;
+                let content = macroCmd.trim();
 
-            // Helper to sanitize macro commands for storage
-            const sanitizeMacro = (macroCmd) => {
-                if (typeof macroCmd === 'string' && macroCmd.startsWith('!')) {
-                    return '$' + macroCmd.substring(1);
+                // If the content is already quoted, handle it carefully
+                if (content.startsWith('"') && content.endsWith('"')) {
+                    content = content.substring(1, content.length - 1).trim();
                 }
-                return macroCmd;
+
+                if (content.startsWith('!')) {
+                    return `"$${content.substring(1)}"`;
+                }
+                if (content.startsWith('$')) {
+                    return `"${content}"`;
+                }
+                if (content.startsWith('#')) {
+                    const macroName = content.substring(1).trim();
+                    if (findObjs({ _type: "macro", name: macroName }).length > 0) {
+                        return content; // It's a valid macro, return as is with #
+                    }
+                }
+                // Check if it's a macro name without the prefix
+                if (findObjs({ _type: "macro", name: content }).length > 0) {
+                    return '#' + content; // Add prefix
+                }
+
+                // If none of the above, it's plain text. Wrap it in quotes.
+                return `"${content}"`;
             };
 
             let parts = [
@@ -2638,13 +2649,13 @@ const TrapSystem = {
             ];
 
             if (primaryMacro && primaryMacro.toLowerCase() !== "none") {
-                parts.push(`primaryMacro:[${sanitizeMacro(primaryMacro)}]`);
+                parts.push(`primaryMacro:[${processMacro(primaryMacro)}]`);
             }
             if (successMacro && successMacro.toLowerCase() !== "none") {
-                parts.push(`successMacro:[${sanitizeMacro(successMacro)}]`);
+                parts.push(`successMacro:[${processMacro(successMacro)}]`);
             }
             if (failureMacro && failureMacro.toLowerCase() !== "none") {
-                parts.push(`failureMacro:[${sanitizeMacro(failureMacro)}]`);
+                parts.push(`failureMacro:[${processMacro(failureMacro)}]`);
             }
 
             let checksArrayStr = [];
