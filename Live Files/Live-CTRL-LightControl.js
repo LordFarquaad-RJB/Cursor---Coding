@@ -38,7 +38,7 @@ const LightControl = {
                 if(player_obj){
                     display_name = player_obj.get('_displayname');
                 }
-                sendChat("LightControl", "/w " + display_name + " 权限错误：此命令仅限GM使用。", null, {noarchive: true});
+                sendChat("LightControl", "/w " + display_name + " Permission error: This command is GM only.", null, {noarchive: true});
                 return;
             }
             const helpMsg = [
@@ -79,7 +79,7 @@ const LightControl = {
 
             let wallID = args[1];
             let action = args[2].toLowerCase();
-            let gridSize = args[3] ? parseInt(args[3], 10) : LightingControl.config.DEFAULT_GRID_SIZE;
+            let gridSize = args[3] ? parseInt(args[3], 10) : LightControl.config.DEFAULT_GRID_SIZE;
             let gridsToMove = args[4] ? parseInt(args[4], 10) : 1;
             let totalMove = gridSize * gridsToMove;
 
@@ -168,7 +168,7 @@ const LightControl = {
                     let player_obj = getObj('player', playerid);
                     let display_name = "";
                     if(player_obj) display_name = player_obj.get('_displayname');
-                    sendChat("LightControl", "/w " + display_name + " 权限错误：all_on_page 操作仅限GM使用。", null, {noarchive: true});
+                    sendChat("LightControl", "/w " + display_name + " Permission error: the all_on_page action is GM only.", null, {noarchive: true});
                     return;
                 }
                 this.processAllDoorsOnPage(action, Campaign().get("playerpageid"));
@@ -267,7 +267,7 @@ const LightControl = {
                 let player_obj = getObj('player', playerid);
                 let display_name = "";
                 if(player_obj) display_name = player_obj.get('_displayname');
-                sendChat("LightControl", "/w " + display_name + " 权限错误：区域门窗操作仅限GM使用。", null, {noarchive: true});
+                sendChat("LightControl", "/w " + display_name + " Permission error: area door commands are GM only.", null, {noarchive: true});
                 return;
             }
 
@@ -366,7 +366,7 @@ const LightControl = {
                 let player_obj = getObj('player', playerid);
                 let display_name = "";
                 if(player_obj) display_name = player_obj.get('_displayname');
-                sendChat("LightControl", "/w " + display_name + " 权限错误：此命令仅限GM使用。", null, {noarchive: true});
+                sendChat("LightControl", "/w " + display_name + " Permission error: This command is GM only.", null, {noarchive: true});
                 return;
             }
 
