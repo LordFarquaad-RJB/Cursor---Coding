@@ -1476,7 +1476,7 @@ const ShopSystem = {
                 "&{template:default}",
                 "{{name=📚 Item Database Help}}",
                 "{{About=The Item Database system allows you to manage and organize items for your shops. Items are organized by category and rarity for easy access.}}",
-                "{{Suggestions=It's recommended to import items to your item database on a seperate test game/campaign as the import is via the chat and it looks messy, you can then copy the handout over to your live game/campaign.}}",
+                "{{Suggestions=It's recommended to import items to your item database on a separate test game/campaign as the import is via the chat and it looks messy, you can then copy the handout over to your live game/campaign.}}",
                 "{{Categories=• Weapons\n• Armor & Attire\n• Equipment\n• Potions\n• Scrolls\n• Magic Items\n• Mounts & Vehicles\n• Services}}",
                 "{{Rarities=• Common\n• Uncommon\n• Rare\n• Very Rare\n• Legendary}}",
                 "{{Database Actions=",
