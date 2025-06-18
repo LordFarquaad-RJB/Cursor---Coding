@@ -79,7 +79,7 @@ const LightControl = {
 
             let wallID = args[1];
             let action = args[2].toLowerCase();
-            let gridSize = args[3] ? parseInt(args[3], 10) : LightingControl.config.DEFAULT_GRID_SIZE;
+            let gridSize = args[3] ? parseInt(args[3], 10) : LightControl.config.DEFAULT_GRID_SIZE;
             let gridsToMove = args[4] ? parseInt(args[4], 10) : 1;
             let totalMove = gridSize * gridsToMove;
 
