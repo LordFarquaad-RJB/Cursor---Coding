@@ -377,7 +377,7 @@ const CommandMenu = {
                 case CommandMenu.config.MENU_SECTIONS.SYSTEM:
                     return "{{System Operations=[" +
                            "⚙️ Main Menu](!menu)" +                  // Returns to the full main menu
-                           "[❓ CommandPanel Help](!menu help)" +     // Shows CommandMenu's own help
+                           "[❓ CommandMenu Help](!menu help)" +     // Shows CommandMenu's own help
                            // APIHeartBeat Integration
                            "[💓 API Status Check](!api-heartbeat --check)" +        // Quick check if API is responsive
                            "[📊 API Latency Graph](!api-heartbeat --histogram)" +  // Shows latency graph (GM useful)
