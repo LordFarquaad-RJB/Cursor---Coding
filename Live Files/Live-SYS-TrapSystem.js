@@ -1,5 +1,5 @@
 /**
- * TrapSystem-Clean.js
+ * TrapSystem.js
  * 
  * A cleaned-up version of the unified Trap & Interaction system for the Roll20 API.
  * 
