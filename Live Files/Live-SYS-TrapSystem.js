@@ -2815,21 +2815,26 @@ const TrapSystem = {
                 TrapSystem.utils.chat('❌ Error: Trap cannot be triggered (disarmed or no uses)');
                 return;
             }
-            // Run the macro
+
             const tagToIdMap = TrapSystem.utils.buildTagToIdMap(trapToken, null, null);
             const macroExecuted = TrapSystem.utils.executeMacro(macroName, tagToIdMap);
             if (macroExecuted) {
-                // Lower the use
                 const newUses = trapData.currentUses - 1;
-                TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses);
-                if (newUses <= 0) {
+                const stillArmed = newUses > 0;
+                TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
+                if (!stillArmed) {
                     TrapSystem.utils.sendDepletedMessage(trapToken);
-                    trapToken.set({
-                        aura1_color: TrapSystem.config.AURA_COLORS.DISARMED,
-                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
-                        showplayers_aura1: false
-                    });
                 }
+
+                trapToken.set({
+                    aura1_color: stillArmed
+                        ? (TrapSystem.state.triggersEnabled
+                            ? TrapSystem.config.AURA_COLORS.ARMED
+                            : TrapSystem.config.AURA_COLORS.PAUSED)
+                        : TrapSystem.config.AURA_COLORS.DISARMED,
+                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
+                    showplayers_aura1: false
+                });
             } else {
                 TrapSystem.utils.chat('❌ Failed to execute the macro.');
             }
