@@ -245,25 +245,6 @@ const TrapSystem = {
             sendChat('TrapSystem', `/w gm Could not find a valid recipient for ID [${recipientId}]. Msg: ${message}`);
         },
 
-        getTokenImageURL(token, size = 'med') {
-            if (!token) return '👤';
-            let url = token.get('imgsrc');
-            if (!url) {
-                const charId = token.get('represents');
-                if (charId) {
-                    const character = getObj('character', charId);
-                    if (character) {
-                        url = character.get('avatar') || character.get('imgsrc');
-                    }
-                }
-            }
-            if (!url) return '👤';
-            url = url.replace(/\/[^\/]*$/, `/${size}.png`)
-                     .replace(/\(/g, '%28').replace(/\)/g, '%29')
-                     .replace(/'/g, '%27').replace(/"/g, '%22');
-            return url;
-        },
-
         // Execute a macro by name
         executeMacro(commandString, tagToIdMap = {}) {
             try {
@@ -2169,12 +2150,15 @@ const TrapSystem = {
                }
            } else {
                 // Make standard control panel for standard traps
-                const imgUrl = TrapSystem.utils.getTokenImageURL(triggeredToken);
+                const img = triggeredToken.get("imgsrc")
+                    .replace(/(thumb|max)\.png/, "med.png")
+                    .replace(/\(/g, '%28').replace(/\)/g, '%29')
+                    .replace(/'/g, '%27').replace(/"/g, '%22');
                 const name = triggeredToken.get("name") || "Unknown Token";
 
                 const panel = [
                     '&{template:default} {{name=Trap Control Panel}}',
-                    `{{Trapped Token=${imgUrl.startsWith('http') ? `<img src="${imgUrl}" width="40" height="40">` : imgUrl} **${name}**}}`,
+                    `{{Trapped Token=<img src="${img}" width="40" height="40"> **${name}**}}`,
                     `{{State=🎯 ${data.isArmed ? "ARMED" : "DISARMED"} Uses: ${data.currentUses}/${data.maxUses}}}`,
                     `{{Reminder=⚠️ Ensure the correct trap token is selected for macros that require a selected token!}}`,
                     `{{After Trigger=${data.currentUses > 1 ? "🎯 ARMED" : "🔴 AUTO-DISARMED"} Uses: ${data.currentUses - 1}/${data.maxUses}}}`,
@@ -2215,10 +2199,11 @@ const TrapSystem = {
 
             // Build the warning menu
             const tokenName = triggeredToken.get("name") || "Your Token";
-            const warnUrl = TrapSystem.utils.getTokenImageURL(triggeredToken);
-            const warnIcon = warnUrl.startsWith('http') ? `<img src="${warnUrl}" width="40" height="40">` : warnUrl;
+            const tokenImg = triggeredToken.get("imgsrc")
+                ? `<img src="${triggeredToken.get("imgsrc").replace(/\/[^\/]*$/, "/med.png")}" width="40" height="40">`
+                : "";
             const menu = `&{template:default} {{name=⚠️ ${tokenName} is Trapped!}}` +
-                `{{Token=${warnIcon}}}` +
+                `{{Token=${tokenImg}}}` +
                 `{{Warning=Your token has triggered a trap and is now locked.}}` +
                 `{{Instructions=Please wait for the GM to resolve the action (unlock, macro, or interaction).}}`;
 
@@ -2385,9 +2370,11 @@ const TrapSystem = {
             }
             if(lockedList.length) {
                 let lockStr = lockedList.map(tk => {
-                    const url = TrapSystem.utils.getTokenImageURL(tk);
-                    const icon = url.startsWith('http') ? `<img src="${url}" width="40" height="40">` : url;
-                    return `${icon} ${tk.get("name")||"???"}`;
+                    let i = tk.get("imgsrc")
+                        .replace(/(thumb|max)\.png/, "med.png")
+                        .replace(/\(/g, '%28').replace(/\)/g, '%29')
+                        .replace(/'/g, '%27').replace(/"/g, '%22');
+                    return `<img src="${i}" width="40" height="40"> ${tk.get("name")||"???"}`;
                 }).join('<br>');
                 msg.push(`{{Currently Holding=${lockStr}}}`);
             }
@@ -2802,23 +2789,12 @@ const TrapSystem = {
                 TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, true);
             }
 
-            let auraColor;
-            if (newUses > 0) {
-                if (TrapSystem.state.triggersEnabled) {
-                    auraColor = trapData.type === 'interaction'
-                        ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION
-                        : TrapSystem.config.AURA_COLORS.ARMED;
-                } else {
-                    auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
-                }
-            } else {
-                auraColor = trapData.type === 'interaction'
-                    ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION
-                    : TrapSystem.config.AURA_COLORS.DISARMED;
-            }
-
             trapToken.set({
-                aura1_color: auraColor,
+                aura1_color: newUses > 0 
+                    ? (TrapSystem.state.triggersEnabled 
+                        ? TrapSystem.config.AURA_COLORS.ARMED 
+                        : TrapSystem.config.AURA_COLORS.PAUSED) 
+                    : TrapSystem.config.AURA_COLORS.DISARMED,
                 aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
                 showplayers_aura1: false
             });
@@ -2839,24 +2815,35 @@ const TrapSystem = {
                 TrapSystem.utils.chat('❌ Error: Trap cannot be triggered (disarmed or no uses)');
                 return;
             }
-            // Run the macro
+
             const tagToIdMap = TrapSystem.utils.buildTagToIdMap(trapToken, null, null);
             const macroExecuted = TrapSystem.utils.executeMacro(macroName, tagToIdMap);
             if (macroExecuted) {
-                // Lower the use
                 const newUses = trapData.currentUses - 1;
-                TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses);
-                if (newUses <= 0) {
+                const stillArmed = newUses > 0;
+                TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
+                if (!stillArmed) {
                     TrapSystem.utils.sendDepletedMessage(trapToken);
-                    const auraColor = trapData.type === 'interaction'
-                        ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION
-                        : TrapSystem.config.AURA_COLORS.DISARMED;
-                    trapToken.set({
-                        aura1_color: auraColor,
-                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
-                        showplayers_aura1: false
-                    });
                 }
+
+                // Determine correct aura color based on trap type
+                const isInteraction = trapData.type === 'interaction';
+                let auraColor;
+                if (stillArmed) {
+                    if (TrapSystem.state.triggersEnabled) {
+                        auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED;
+                    } else {
+                        auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+                    }
+                } else {
+                    auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION : TrapSystem.config.AURA_COLORS.DISARMED;
+                }
+
+                trapToken.set({
+                    aura1_color: auraColor,
+                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
+                    showplayers_aura1: false
+                });
             } else {
                 TrapSystem.utils.chat('❌ Failed to execute the macro.');
             }
@@ -2870,7 +2857,10 @@ const TrapSystem = {
         showInteractionMenu(trapToken, triggeredTokenId = null) { // Added triggeredTokenId parameter
             if (!trapToken) return;
             try {
-                const imgUrl = TrapSystem.utils.getTokenImageURL(trapToken);
+                let tokenImage = trapToken.get("imgsrc");
+                tokenImage = tokenImage.replace(/(thumb|max)\.png/, "med.png")
+                                       .replace(/\(/g, '%28').replace(/\)/g, '%29')
+                                       .replace(/'/g, '%27').replace(/"/g, '%22');
                 const tokenName = trapToken.get("name") || "Unknown Object";
                 const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"));
 
@@ -2882,7 +2872,7 @@ const TrapSystem = {
                 const menu = [
                     '&{template:default}',
                     `{{name=${tokenName}}}`, // eslint-disable-line quotes
-                    `{{Description=${imgUrl.startsWith('http') ? `<img src="${imgUrl}" width="100" height="100" style="display: block; margin: 5px auto;">` : imgUrl}}}`,
+                    `{{Description=<img src="${tokenImage}" width="100" height="100" style="display: block; margin: 5px auto;">}}`,
                     `{{State=🎯 ${trapData.isArmed ? (TrapSystem.state.triggersEnabled ? "ARMED" : "⚠️ PAUSED") : "DISARMED"} (${trapData.currentUses}/${trapData.maxUses} uses)}}`
                 ];
 
@@ -3110,8 +3100,7 @@ const TrapSystem = {
         showCharacterSelectionMenu(token, playerid, triggeredTokenId = null) { // Added triggeredTokenId
             const characters = findObjs({ _type: "character" });
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
         
             let menu = `&{template:default} {{name=Select Character for Skill Check}}`;
             menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
@@ -3152,8 +3141,7 @@ const TrapSystem = {
             }
             
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
             const emoji = TrapSystem.config.SKILL_TYPES[check.type] || "🎲";
             const skillType = check.type.replace(/_/g, ' ');
 
@@ -3221,8 +3209,7 @@ const TrapSystem = {
             const config = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token);
             if (!config) return;
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
 
             let menu = `&{template:default} {{name=Custom Skill Check}}`;
             menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
@@ -3243,8 +3230,7 @@ const TrapSystem = {
             if (!config) return;
 
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
             const emoji = TrapSystem.config.SKILL_TYPES[skillType] || "🎲";
 
             const prevPending = TrapSystem.state.pendingChecks[playerid] || {};
@@ -3308,8 +3294,7 @@ const TrapSystem = {
 
 
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
             const emoji = TrapSystem.config.SKILL_TYPES[skillTypeWithSpaces] || "🎲";
 
             let menu = `&{template:default} {{name=${emoji} ${skillTypeWithSpaces} Check (DC ${newDc})}}`;
@@ -3338,8 +3323,7 @@ const TrapSystem = {
             if(!check) return;
 
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
             const emoji = TrapSystem.config.SKILL_TYPES[check.type] || "🎲";
             const skillType = check.type.replace(/_/g, ' ');
 
@@ -3401,8 +3385,7 @@ const TrapSystem = {
         showGMResponseMenu(token, playerid, triggeredTokenId = null) {
             const config = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token);
             const tokenName = token.get("name") || "Unknown Token";
-            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = iconUrl.startsWith('http') ? `<img src="${iconUrl}" width="20" height="20">` : iconUrl;
+            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
             let menu = `&{template:default} {{name=GM Response}}`;
             menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
             menu += `{{Action=💭 Explained Action}}`;
@@ -3530,8 +3513,11 @@ const TrapSystem = {
                 const trappedToken = getObj("graphic", triggeredTokenId); 
                 const check = pendingCheck.config.checks[0];
                 const tokenName = token.get("name") || "Unknown Token";
-                const urlIcon = TrapSystem.utils.getTokenImageURL(token);
-                const tokenIcon = urlIcon.startsWith('http') ? `<img src="${urlIcon}" width="20" height="20">` : urlIcon;
+                const imgStr = token.get('imgsrc')
+                    .replace(/(thumb|max)\.png/, "med.png")
+                    .replace(/\(/g, '%28').replace(/\)/g, '%29')
+                    .replace(/'/g, '%27').replace(/"/g, '%22');
+                const tokenIcon = `<img src="${imgStr}" width="20" height="20">`;
                 const characterNameToDisplay = pendingCheck.characterName || "Player";
                 const emoji = TrapSystem.config.SKILL_TYPES[check.type] || "🎲";
                 const skillType = check.type.replace(/_/g, ' ');
@@ -3573,8 +3559,7 @@ const TrapSystem = {
 
                 if (mismatch) {
                     // Show GM menu for mismatch
-                    const trapUrl = TrapSystem.utils.getTokenImageURL(token);
-                    const trapImg = trapUrl.startsWith('http') ? `<img src='${trapUrl}' width='20' height='20'>` : trapUrl;
+                    const trapImg = token.get('imgsrc') ? `<img src='${token.get('imgsrc').replace(/\/[^\/]*$/, '/med.png')}' width='20' height='20'>` : '';
                     const trapName = token.get('name') && token.get('name') !== 'Unknown Token' ? token.get('name') : 'Unknown Token';
                     const gmMenu = `&{template:default} {{name=⚠️ Roll Skill Mismatch!}} {{Character=${pendingCheck.characterName || 'Unknown'}}} {{Trap=${trapImg} ${trapName}}} {{Expected=${expectedTypeRaw}}} {{Rolled=${rolledTypeRaw || 'Flat Roll'}}} {{Reason=${mismatchReason}}} {{Actions=[✅ Accept Roll](!trapsystem resolvemismatch ${pendingCheck.characterId || pendingCheck.playerid} ${token.id} accept ${roll.total} ${roll.rollType||'normal'} ${roll.isAdvantageRoll?'1':'0'}) [❌ Reject & Reroll](!trapsystem resolvemismatch ${pendingCheck.characterId || pendingCheck.playerid} ${token.id} reject) [ℹ️ Show Trap Status](!trapsystem status ${token.id})}}`;
                     TrapSystem.utils.chat(gmMenu);
