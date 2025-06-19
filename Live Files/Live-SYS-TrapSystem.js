@@ -2230,7 +2230,7 @@ const TrapSystem = {
             const warnImgUrl = TrapSystem.utils.getTokenImageURL(triggeredToken);
             const tokenImg = warnImgUrl === '👤' ? '👤' : `<img src="${warnImgUrl}" width="40" height="40">`;
             const menu = `&{template:default} {{name=⚠️ ${tokenName} is Trapped!}}` +
-                `{{Token=${tokenImg}}}` +
+                `{{Token=${warnIcon}}}` +
                 `{{Warning=Your token has triggered a trap and is now locked.}}` +
                 `{{Instructions=Please wait for the GM to resolve the action (unlock, macro, or interaction).}}`;
 
