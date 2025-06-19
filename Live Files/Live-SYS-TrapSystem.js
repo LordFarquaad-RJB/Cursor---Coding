@@ -2446,6 +2446,13 @@ const TrapSystem = {
                 return;
             }
 
+            if (trapData.autoTrigger &&
+                trapData.primaryMacro &&
+                trapData.primaryMacro.macro) {
+                this.manualMacroTrigger(trapToken.id, trapData.primaryMacro.macro);
+                return;
+            }
+
             // If "interaction" type, show interaction menu regardless of armed state.
             // The menu itself will handle showing/hiding action buttons.
             if (trapData.type === 'interaction') {
@@ -2819,7 +2826,7 @@ const TrapSystem = {
                     TrapSystem.utils.sendDepletedMessage(trapToken);
                     trapToken.set({
                         aura1_color: TrapSystem.config.AURA_COLORS.DISARMED,
-                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
+                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
                         showplayers_aura1: false
                     });
                 }
