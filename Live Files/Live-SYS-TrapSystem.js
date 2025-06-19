@@ -2802,12 +2802,23 @@ const TrapSystem = {
                 TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, true);
             }
 
+            let auraColor;
+            if (newUses > 0) {
+                if (TrapSystem.state.triggersEnabled) {
+                    auraColor = trapData.type === 'interaction'
+                        ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION
+                        : TrapSystem.config.AURA_COLORS.ARMED;
+                } else {
+                    auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+                }
+            } else {
+                auraColor = trapData.type === 'interaction'
+                    ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION
+                    : TrapSystem.config.AURA_COLORS.DISARMED;
+            }
+
             trapToken.set({
-                aura1_color: newUses > 0 
-                    ? (TrapSystem.state.triggersEnabled 
-                        ? TrapSystem.config.AURA_COLORS.ARMED 
-                        : TrapSystem.config.AURA_COLORS.PAUSED) 
-                    : TrapSystem.config.AURA_COLORS.DISARMED,
+                aura1_color: auraColor,
                 aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
                 showplayers_aura1: false
             });
@@ -2837,8 +2848,11 @@ const TrapSystem = {
                 TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses);
                 if (newUses <= 0) {
                     TrapSystem.utils.sendDepletedMessage(trapToken);
+                    const auraColor = trapData.type === 'interaction'
+                        ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION
+                        : TrapSystem.config.AURA_COLORS.DISARMED;
                     trapToken.set({
-                        aura1_color: TrapSystem.config.AURA_COLORS.DISARMED,
+                        aura1_color: auraColor,
                         aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
                         showplayers_aura1: false
                     });
