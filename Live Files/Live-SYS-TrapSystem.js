@@ -36,6 +36,9 @@ const TrapSystem = {
             PAUSED: "#ffa500",                  // Orange
             DETECTION: "#808080",               // Subtle gray for detection range
             DETECTED: "#c0c0c0",                // Lighter gray when detected
+            DISARMED_UNDETECTED: "#00008B",     // Dark Blue for disarmed, undetected traps
+            DISARMED_DETECTED: "#A9A9A9",       // Dark Silver for disarmed, detected traps
+            DETECTION_OFF: "#222222",           // Very dark gray for when detection is off (trap disabled/depleted)
             PASSIVE_DISABLED: "#5b0f00"         // Purple for when passive detection is toggled off
         },
 
@@ -672,6 +675,9 @@ const TrapSystem = {
                         case "passiveenabled":
                             trapData.passiveEnabled = value.toLowerCase() === "on";
                             break;
+                        case "detected":
+                            trapData.detected = value.toLowerCase() === "on";
+                            break;
                     }
                 }
                 detectionBlockSuccessfullyParsed = true;
@@ -710,39 +716,39 @@ const TrapSystem = {
 
             // Sync aura color and bars if we have a token
             if(token && updateVisuals) {
-                let auraCol;
-                if (trapData.isArmed && trapData.currentUses > 0) {
+                const isArmedAndHasUses = trapData.isArmed && trapData.currentUses > 0;
+                let aura1Color;
+                if (isArmedAndHasUses) {
                     if (TrapSystem.state.triggersEnabled) {
-                        auraCol = trapData.type === 'interaction' 
+                        aura1Color = trapData.type === 'interaction' 
                             ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION
                             : TrapSystem.config.AURA_COLORS.ARMED;
                     } else {
-                        auraCol = TrapSystem.config.AURA_COLORS.PAUSED;
+                        aura1Color = TrapSystem.config.AURA_COLORS.PAUSED;
                     }
                 } else {
-                    auraCol = trapData.type === 'interaction'
+                    aura1Color = trapData.type === 'interaction'
                         ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION
                         : TrapSystem.config.AURA_COLORS.DISARMED;
                 }
 
-                // Determine the correct color for the detection aura (aura2)
-                let aura2Color = TrapSystem.config.AURA_COLORS.DETECTION; // Default
-                const isPassiveEnabled = trapData.passiveEnabled === false ? false : true;
+                let aura2Color = '#000000'; // Default safe color
+                let aura2Radius = '';     // Default to invisible
 
-                if (!isPassiveEnabled) {
-                    aura2Color = TrapSystem.config.AURA_COLORS.PASSIVE_DISABLED;
-                } else {
-                    const isDetected = trapData.passiveSpotDC && 
-                                    TrapSystem.state.passivelyNoticedTraps && 
-                                    TrapSystem.state.passivelyNoticedTraps[token.id] &&
-                                    Object.keys(TrapSystem.state.passivelyNoticedTraps[token.id]).length > 0;
-                    if (isDetected) {
-                        aura2Color = TrapSystem.config.AURA_COLORS.DETECTED;
+                if (trapData.showDetectionAura) {
+                    const isDetected = trapData.detected; // Use the persistent flag
+
+                    if (isArmedAndHasUses) {
+                        aura2Radius = trapData.passiveMaxRange || 0;
+                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
+                    } else {
+                        aura2Radius = 0; // Visible dot
+                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
                     }
                 }
 
                 token.set({
-                    aura1_color: auraCol,
+                    aura1_color: aura1Color,
                     aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
                     showplayers_aura1: false,
                     bar1_value: trapData.currentUses,
@@ -752,8 +758,8 @@ const TrapSystem = {
                     bar2_max: trapData.passiveSpotDC || 0,
                     showplayers_bar2: false,
                     aura2_color: aura2Color,
-                    aura2_radius: trapData.showDetectionAura ? (trapData.passiveMaxRange || 0) : 0,
-                    showplayers_aura2: false
+                    aura2_radius: aura2Radius,
+                    showplayers_aura2: false 
                 });
             }
 
@@ -847,10 +853,28 @@ const TrapSystem = {
                         : TrapSystem.config.AURA_COLORS.DISARMED;
                 }
 
+                const isArmedAndHasUses = finalArmedState && current > 0;
+                let aura2Color = '#000000'; // Default safe color
+                let aura2Radius = '';     // Default to invisible
+
+                if (trapData.showDetectionAura) {
+                    const isDetected = trapData.detected; // Use the persistent flag
+
+                    if (isArmedAndHasUses) {
+                        aura2Radius = trapData.passiveMaxRange || 0;
+                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
+                    } else {
+                        aura2Radius = 0; // Visible dot
+                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
+                    }
+                }
+
                 token.set({
                     aura1_color: auraColor,
                     aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
-                    showplayers_aura1: false
+                    showplayers_aura1: false,
+                    aura2_color: aura2Color,
+                    aura2_radius: aura2Radius
                 });
 
                 this.log(`Updated trap state - Uses: ${current}/${max}, Armed: ${finalArmedState ? 'on' : 'off'} (New Format Update)`, 'info');
@@ -2339,6 +2363,9 @@ const TrapSystem = {
             ];
 
             if (data.type === "interaction") {
+                if (data.primaryMacro && data.primaryMacro.name) {
+                    msg.push(`{{Primary Macro=${data.primaryMacro.name}}}`);
+                }
                 if (data.successMacro) {
                     msg.push(`{{Success Macro=${data.successMacro}}}`);
                 }
@@ -2406,25 +2433,6 @@ const TrapSystem = {
             // Update
             TrapSystem.utils.updateTrapUses(token, newUses, trapData.maxUses, newArmedState);
             
-            // Update aura
-            const finalTrapData = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token, false);
-            let auraColor;
-            if (newArmedState && newUses > 0) {
-                auraColor = TrapSystem.state.triggersEnabled
-                    ? (finalTrapData.type === 'interaction' ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED)
-                    : TrapSystem.config.AURA_COLORS.PAUSED;
-            } else {
-                 auraColor = finalTrapData.type === 'interaction'
-                    ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION
-                    : TrapSystem.config.AURA_COLORS.DISARMED;
-            }
-
-            token.set({
-                aura1_color: auraColor,
-                aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
-                showplayers_aura1: false
-            });
-
             // Status
             TrapSystem.utils.chat(`${newArmedState ? '🎯' : '🔴'} Trap ${newArmedState ? 'ARMED' : 'DISARMED'}`);
             if (trapData.type === 'interaction') {
@@ -4050,6 +4058,21 @@ const TrapSystem = {
             }
             TrapSystem.state.passivelyNoticedTraps[noticedTrap.id][observerId] = true;
 
+            // Persistently mark the trap as detected in its notes
+            let notes = noticedTrap.get("gmnotes");
+            let decodedNotes = "";
+            try { decodedNotes = decodeURIComponent(notes); } catch (e) { decodedNotes = notes; }
+
+            const detectionBlockRegex = /\{!trapdetection\s+([^}]+)\}/;
+            const match = decodedNotes.match(detectionBlockRegex);
+
+            if (match && !/detected:\s*\[on\]/.test(match[1])) {
+                const newDetectionBlock = match[1] + ' detected:[on]';
+                const updatedNotes = decodedNotes.replace(detectionBlockRegex, `{!trapdetection ${newDetectionBlock}}`);
+                noticedTrap.set("gmnotes", encodeURIComponent(updatedNotes));
+            }
+
+
             // Update the trap's aura2 color to show it's been detected
             noticedTrap.set({
                 aura2_color: TrapSystem.config.AURA_COLORS.DETECTED
@@ -4616,7 +4639,16 @@ const TrapSystem = {
                 const trapId = selectedToken.id;
                 const trapName = selectedToken.get("name") || `Trap ID ${trapId}`;
                 if (TrapSystem.state.passivelyNoticedTraps && TrapSystem.state.passivelyNoticedTraps[trapId]) {
-                    delete TrapSystem.state.passivelyNoticedTraps[trapId];
+                    // Also remove the persistent 'detected' flag from notes
+                    let notes = selectedToken.get("gmnotes");
+                    let decodedNotes = "";
+                    try { decodedNotes = decodeURIComponent(notes); } catch (e) { decodedNotes = notes; }
+                    
+                    if (decodedNotes.includes("detected:[on]")) {
+                        const updatedNotes = decodedNotes.replace(/\s*detected:\s*\[on\]/, '');
+                        selectedToken.set("gmnotes", encodeURIComponent(updatedNotes));
+                        TrapSystem.utils.parseTrapNotes(updatedNotes, selectedToken);
+                    }
                     TrapSystem.utils.log(`Passively noticed state for trap ID '${trapId}' has been cleared.`, 'info');
                     message = `✅ Passive detection state for selected trap '${trapName}' has been reset.`;
                 } else {
@@ -4629,8 +4661,15 @@ const TrapSystem = {
                     // Find all traps and reset their auras if they were previously detected
                     const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapSystem.utils.isTrap(t));
                     allTraps.forEach(trapToken => {
-                        if (TrapSystem.state.passivelyNoticedTraps[trapToken.id]) {
-                            trapToken.set({ aura2_color: TrapSystem.config.AURA_COLORS.DETECTION });
+                        // Remove persistent flags from all traps
+                        let notes = trapToken.get("gmnotes");
+                        let decodedNotes = "";
+                        try { decodedNotes = decodeURIComponent(notes); } catch (e) { decodedNotes = notes; }
+                        
+                        if (decodedNotes.includes("detected:[on]")) {
+                            const updatedNotes = decodedNotes.replace(/\s*detected:\s*\[on\]/, '');
+                            trapToken.set("gmnotes", encodeURIComponent(updatedNotes));
+                            TrapSystem.utils.parseTrapNotes(updatedNotes, trapToken);
                         }
                     });
                     
