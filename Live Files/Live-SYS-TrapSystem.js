@@ -616,11 +616,6 @@ const TrapSystem = {
                     const key = match[1].toLowerCase();
                     let value = match[2]; // Keep original casing and quotes
 
-                    // If the value is wrapped in quotes, strip them and unescape internal quotes.
-                    if (value.startsWith('"') && value.endsWith('"')) {
-                        value = value.substring(1, value.length - 1).replace(/\\"/g, '"');
-                    }
-
                     switch (key) {
                         case "type": trapData.type = value.toLowerCase(); break;
                         case "uses":
@@ -632,15 +627,31 @@ const TrapSystem = {
                             break;
                         case "armed": trapData.isArmed = value.toLowerCase() === 'on'; break;
                         case "primarymacro": 
+                            if (value.startsWith('"') && value.endsWith('"')) {
+                                value = value.substring(1, value.length - 1).replace(/\\"/g, '"');
+                            }
                             trapData.primaryMacro = { name: value, macro: value }; // Store as object
                             break; 
-                        case "failuremacro": trapData.failureMacro = value; break; // Interaction trap
-                        case "successmacro": trapData.successMacro = value; break;
+                        case "failuremacro": 
+                            if (value.startsWith('"') && value.endsWith('"')) {
+                                value = value.substring(1, value.length - 1).replace(/\\"/g, '"');
+                            }
+                            trapData.failureMacro = value; break; // Interaction trap
+                        case "successmacro": 
+                            if (value.startsWith('"') && value.endsWith('"')) {
+                                value = value.substring(1, value.length - 1).replace(/\\"/g, '"');
+                            }
+                            trapData.successMacro = value; break;
                         case "options": 
                             trapData.options = value.split(';').map(optStr => {
-                                const trimmedOptStr = optStr.trim();
-                                if (trimmedOptStr) return { name: trimmedOptStr, macro: trimmedOptStr };
-                return null;
+                                let trimmedOptStr = optStr.trim();
+                                if (trimmedOptStr.startsWith('"') && trimmedOptStr.endsWith('"')) {
+                                    trimmedOptStr = trimmedOptStr.substring(1, trimmedOptStr.length - 1).replace(/\\"/g, '"');
+                                }
+                                if (trimmedOptStr) {
+                                    return { name: trimmedOptStr, macro: trimmedOptStr };
+                                }
+                                return null;
                             }).filter(opt => opt !== null);
                             break;
                         case "checks": // Format: Skill1:DC1;Skill2:DC2
@@ -1637,7 +1648,6 @@ const TrapSystem = {
                     0 <= dotAD_AP && dotAD_AP <= magSqAD);
         },
 
-        // [NEW UTILITY FUNCTION]
         constructGmNotesFromTrapData(trapData) {
             if (!trapData) return "";
             TrapSystem.utils.log(`[constructGmNotesFromTrapData] Input trapData: ${JSON.stringify(trapData).substring(0,200)}...`, 'debug');
@@ -1670,7 +1680,7 @@ const TrapSystem = {
             if (trapData.successMacro) triggerSettings.push(`successMacro:[${formatValue(trapData.successMacro)}]`);
             
             if (trapData.options && trapData.options.length > 0) {
-                const formattedOptions = trapData.options.map(opt => formatValue(opt.macro || opt.name)).join(';');
+                const formattedOptions = trapData.options.map(opt => opt.macro || opt.name).join(';');
                 triggerSettings.push(`options:[${formattedOptions}]`);
             }
             if (trapData.checks && trapData.checks.length > 0) {
@@ -2218,13 +2228,13 @@ const TrapSystem = {
                 ];
 
                 let triggerOptionsString = "";
-                if (data.primaryMacro && data.primaryMacro.name && data.primaryMacro.macro) {
+                if (data.primaryMacro && data.primaryMacro.macro) {
                     triggerOptionsString += `[🎯 ${data.primaryMacro.name}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${data.primaryMacro.macro})`;
                 }
 
                 if(data.options && data.options.length) {
                     data.options.forEach(o => {
-                        if (triggerOptionsString !== "") triggerOptionsString += " "; 
+                        if (triggerOptionsString) triggerOptionsString += ' ';
                         triggerOptionsString += `[🎯 ${o.name}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${o.macro})`;
                     });
                 }
@@ -5120,13 +5130,22 @@ on("chat:message",(msg) => {
                     TrapSystem.utils.chat("❌ Error: No token specified!");
                 }
                 break;
-            case "marktriggered":
-                if(args[2] && args[3] && args[4]) {
-                    TrapSystem.triggers.markTriggered(args[2], args[3], args[4]);
-                } else {
+            case "marktriggered": {
+                // The incoming command is split by spaces.
+                // e.g. !trapsystem marktriggered TOKENID TRAPID Text Here
+                // We need to grab the token ID (arg 2), trap ID (arg 3),
+                // and then join everything after that to reassemble the macro name.
+                const parts = msg.content.split(' ');
+                if (parts.length < 5) {
                     TrapSystem.utils.chat('❌ marktriggered: Missing tokenId, trapId, or macroName!');
+                    break;
                 }
+                const tokenId = parts[2];
+                const trapId = parts[3];
+                const macroName = parts.slice(4).join(' '); // Re-assembles multi-word macros
+                TrapSystem.triggers.markTriggered(tokenId, trapId, macroName);
                 break;
+                }
             case "enable":
                 TrapSystem.triggers.enableTriggers();
                 break;
