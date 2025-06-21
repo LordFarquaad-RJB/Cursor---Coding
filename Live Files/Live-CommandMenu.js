@@ -10,15 +10,15 @@ const CommandMenu = {
         LOG_LEVEL: "info",
         GM_ONLY: true,
         MENU_SECTIONS: {
-            SHOP: "shop",
-            TRAP: "trap system",
-            TOKEN_FX: "tokenFX",
-            TOKEN_MOD: "tokenMod",
-            AUDIO: "audio",
-            COMBAT: "combat",
-            UTILITY: "utility",
-            LIGHTING: "lighting",
-            SYSTEM: "system"
+            SHOP: "ShopSystem",
+            TRAP: "TrapSystem",
+            TOKEN_FX: "TokenFX",
+            TOKEN_MOD: "TokenMod",
+            AUDIO: "Audio",
+            COMBAT: "Combat",
+            UTILITY: "Utility",
+            LIGHTING: "LightControl",
+            SYSTEM: "System"
         },
         KNOWN_SYSTEMS: {
             'CommandMenu': { version: 'v1.1.0' },
@@ -171,15 +171,15 @@ const CommandMenu = {
 
         getSectionEmoji(section) {
             const emojis = {
-                shop: "🏪",
-                trap: "🎯",
-                tokenFX: "🎨",
-                tokenMod: "🔧",
-                audio: "🎵",
-                combat: "⚔️",
-                utility: "🔧",
-                lighting: "💡",
-                system: "⚙️"
+                "ShopSystem": "🏪",
+                "TrapSystem": "🎯",
+                "TokenFX": "🎨",
+                "TokenMod": "🔧",
+                "Audio": "🎵",
+                "Combat": "⚔️",
+                "Utility": "🔧",
+                "LightControl": "💡",
+                "System": "⚙️"
             };
             return emojis[section] || "📋";
         },
@@ -230,7 +230,7 @@ const CommandMenu = {
                            "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                            "[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                            "[🛠️ Setup Detection](!trapsystem passivemenu)" +
-                           "[👁️ Toggle Detection Aura](!trapsystem setpassive showaura @{selected|token_id})" +
+                           "[👁️ Toggle Detection Aura](!trapsystem setpassive showaura &#64;{selected|token_id true)" +
                            "[🔄 Toggle Trap](!trapsystem toggle)" +
                            "[📊 Trap Status](!trapsystem status)" +
                            "[⚡ Trigger Trap](!trapsystem trigger)" +
@@ -372,11 +372,14 @@ const CommandMenu = {
                            "}}";
 
                 case CommandMenu.config.MENU_SECTIONS.UTILITY:
-                    return "{{Utility=[" +
-                           "[📥 Export Chat Log](/exportchat ?{Filename|chat_log.txt})" +
-                           "[🔇 Stop All Sounds](/sound)" +
-                           "[🗑️ Clear Chat Archive](/clearchat)" +
-                           "]}}";
+                    return "{{Utility (GM Tools)=[" +
+                           "📋 Export Macros](!exportmacros)<br>" +
+                           "[🎯 Export Traps](!exporttraps)<br>" +
+                           "[📤 Export All Data](!exportall)<br>" +
+                           "[🔄 Migrate Traps](!migrate-traps)<br>" +
+                           "[🔍 Inspect Object](!getselprops)<br>" +
+                           "[🚪 Inspect Doors](!getdoorprops)" +
+                           "}}";
 
                 case CommandMenu.config.MENU_SECTIONS.SYSTEM:
                     return "{{System Operations=[" +
@@ -479,7 +482,19 @@ const CommandMenu = {
                 "**- Table Controls (New!):**<br>" +
                 "• Roll Table by Name: Rolls a specified rollable table and outputs the result to chat. Can whisper results." +
                 "}}",
-                "{{Note=Most commands work with selected tokens}}"
+                "{{Note=Most commands work with selected tokens}}",
+                "{{Direct Menu Commands=" +
+                "Use these to open a specific menu:<br>" +
+                "• `!menu ShopSystem`<br>" +
+                "• `!menu TrapSystem`<br>" +
+                "• `!menu TokenFX`<br>" +
+                "• `!menu TokenMod`<br>" +
+                "• `!menu Audio`<br>" +
+                "• `!menu Combat`<br>" +
+                "• `!menu Utility`<br>" +
+                "• `!menu LightControl`<br>" +
+                "• `!menu System`" +
+                "}}"
             ];
 
             sendChat("API", `/w gm ${help.join(" ")}`, null, {noarchive: true});
