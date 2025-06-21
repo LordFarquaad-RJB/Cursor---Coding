@@ -4410,10 +4410,10 @@ const TrapSystem = {
                 `[Set TokenBar](!trapsystem setpassive tokenbar ${trapToken.id} ?{Token Bar Fallback - e.g., bar1|bar1 🟢|bar2 🔵|bar3 🔴|none})`,
                 "}}",
                 "{{⚠️ Notes=",
-                "- For custom messages, please avoid using emojis. Your message will be wrapped in a standard alert template which may not display emojis correctly.",
+                "- For custom messages, please avoid using emojis. Your message will be wrapped in a standard alert template which may not display emojis correctly.\n",
                 `- Player alerts for identical messages are debounced. If the same alert is triggered for the same character within ${debounceTimeSeconds} seconds, it will be suppressed for that player (GM alerts are not debounced), note distance placeholders will not be treated as identical messages.`, // Added debounce info
                 "}}",
-                `{{⚠️ Help=Available placeholders: ${placeholderHelp}}}`
+                `{{⚠️ Help=Available placeholders: \n ${placeholderHelp}}}`
             ];
             TrapSystem.utils.chat(menu.join(" "), playerId);
         },
