@@ -1165,8 +1165,8 @@ const TrapSystem = {
                 '{{name=🎯 Trap System Help}}',
                 '{{About=The Trap System allows you to create and manage traps, skill checks, and interactions. Traps can be triggered by movement or manually.}}',
                 '{{Setup Traps=',
-                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
-                '[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Auto Trigger|false|true})',
+                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
+                '[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
                 "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, Text} ?{Optional Macro 2|None} ?{Optional Macro 3|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                 '{{Trap Control=',
@@ -1182,11 +1182,12 @@ const TrapSystem = {
                 '[🧹 Reset Detection](!trapsystem resetdetection) - Clears all passively noticed traps for all\n',
                 '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
                 '{{Tips=',
-                '• Use the `@TOKENID@` placeholder in your macros to refer to the primary token involved in an action (e.g., the trap itself, or the token being affected).<br>',
-                '• Macros can call commands from other scripts like `TokenFX.js` (e.g., `!triggerByTag`).<br>',
-                '• Select a token before using most commands.<br>',
-                '• Movement triggers can be disabled for interaction traps.<br>',
-                '• Skill checks support advantage/disadvantage.}}'
+                '• **Macro Types**: Actions can be a Roll20 Macro (`#MacroName`), an API command (`!command` or `$command`), or plain chat text.<br>',
+                '• **Use Quotes!**: When using `setup` commands, any action with spaces MUST be wrapped in double quotes. Example: `"!token-mod --set status_dead"` or `"This is a trap message"`.<br>',
+                '• **Placeholders**: Use `<&trap>` for the trap token and `<&trapped>` for the token that triggered it. `@TOKENID@` can also be used as a shortcut for the trap token.<br>',
+                '• **Token Selection**: Most commands require a trap token to be selected first.<br>',
+                '• **Interaction Traps**: You can disable movement triggers on interaction traps to make them manually activated only.<br>',
+                '• **Skill Checks**: Interaction traps support advantage/disadvantage.}}'
             ].join(' ');
             sendChat(target, `/w GM ${helpMenu}`);
         },
@@ -2632,32 +2633,22 @@ const TrapSystem = {
         },
 
         // Setup an "interaction" trap
-        setupInteractionTrap(token, uses, primaryMacro, successMacro, failureMacro, check1Type, check1DC, check2Type, check2DC, movementTriggerEnabled = true, autoTriggerEnabled = false) {
+        setupInteractionTrap(token, uses, primaryMacro, successMacro, failureMacro, check1Type, check1DC, check2Type, check2DC, movementTriggerEnabled = true, movement = 'intersection', autoTriggerEnabled = false) {
             TrapSystem.utils.log(`[setupInteractionTrap] Called. Token: ${token ? token.id : 'null'}, Uses: ${uses}, PrimaryM: ${primaryMacro}, SuccessM: ${successMacro}, FailM: ${failureMacro}, AutoT: ${autoTriggerEnabled}`, 'debug');
             if (!token) {
                 TrapSystem.utils.chat('❌ Error: No token selected!');
                 return;
             }
+
+            let positionValue = movement ? movement.toLowerCase() : 'intersection';
+            if (positionValue === 'grid') {
+                positionValue = '0,0';
+            }
+
             const maxUses = parseInt(uses);
             if (isNaN(maxUses) || maxUses < 1) {
                 TrapSystem.utils.chat('❌ Error: Uses must be a positive number!');
                 return;
-            }
-
-            const existingNotes = token.get("gmnotes");
-            let existingPosition = "intersection";
-
-            try {
-                if (existingNotes) {
-                    const decodedNotes = decodeURIComponent(existingNotes);
-                    const match = decodedNotes.match(/position:\[([^\]]+)\]/);
-                    if (match && match[1]) {
-                        existingPosition = match[1];
-                        TrapSystem.utils.log(`[setupInteractionTrap] Found existing position: ${existingPosition}`, 'debug');
-                    }
-                }
-            } catch (e) {
-                // Ignore errors, just means notes weren't a valid trap. We'll use the default.
             }
             
             const processMacro = (macroCmd) => {
@@ -2737,7 +2728,7 @@ const TrapSystem = {
             parts.push(`movementTrigger:[${movementIsEnabled ? 'on' : 'off'}]`);
             const autoTriggerIsEnabled = (typeof autoTriggerEnabled === 'string' && autoTriggerEnabled.toLowerCase() === 'true') || autoTriggerEnabled === true;
             parts.push(`autoTrigger:[${autoTriggerIsEnabled ? 'on' : 'off'}]`);
-            parts.push(`position:[${existingPosition}]`);
+            parts.push(`position:[${positionValue}]`);
 
             const trapConfigString = `{!traptrigger ${parts.join(' ')}}`;
 
@@ -2799,7 +2790,7 @@ const TrapSystem = {
                 }
             }
 
-                        const newUses = Math.max(0, trapData.currentUses - 1);
+            const newUses = Math.max(0, trapData.currentUses - 1);
             if (newUses <= 0) {
                 TrapSystem.utils.updateTrapUses(trapToken, 0, trapData.maxUses, false);
                              TrapSystem.utils.sendDepletedMessage(trapToken);
@@ -5022,10 +5013,11 @@ on("chat:message",(msg) => {
                     const failureMacro = args[5];
 
                     const autoTriggerEnabled = args[args.length - 1];
-                    const movementTriggerEnabled = args[args.length - 2];
+                    const movement = args[args.length - 2];
+                    const movementTriggerEnabled = args[args.length - 3];
                     
                     // All args between the macros and the final two flags are for the checks.
-                    const checkArgs = args.slice(6, args.length - 2);
+                    const checkArgs = args.slice(6, args.length - 3);
 
                     const checks = [];
                     let currentSkillParts = [];
@@ -5055,13 +5047,12 @@ on("chat:message",(msg) => {
                     TrapSystem.utils.log(`[API Handler] Parsed for setupInteractionTrap - Uses: ${uses}, PrimaryM: ${primaryMacro}, SuccessM: ${successMacro}, FailM: ${failureMacro}, C1Type: '${check1Type}', C1DC: ${check1DC}, C2Type: '${check2Type}', C2DC: ${check2DC}, MoveEnabled: ${movementTriggerEnabled}, AutoTrigger: ${autoTriggerEnabled}`, 'debug');
 
                     TrapSystem.triggers.setupInteractionTrap(
-                        selectedToken,
-                        uses,
+                        selectedToken,uses,
                         primaryMacro, successMacro, failureMacro,
                         check1Type, check1DC,
                         check2Type, check2DC,
                         movementTriggerEnabled,
-                        autoTriggerEnabled
+                        movement,autoTriggerEnabled
                     );
                 } catch (e) {
                     TrapSystem.utils.log(`[API Handler] ERROR in setupInteractionTrap case: ${e.message} ${e.stack}`, 'error');
