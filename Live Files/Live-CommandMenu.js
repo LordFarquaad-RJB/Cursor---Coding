@@ -377,6 +377,7 @@ const CommandMenu = {
                            "[🎯 Export Traps](!exporttraps)<br>" +
                            "[📤 Export All Data](!exportall)<br>" +
                            "[🔄 Migrate Traps](!migrate-traps)<br>" +
+                           "[✈️ Migrate Selected Traps](!migrate-traps selected)<br>" +
                            "[🔍 Inspect Object](!getselprops)<br>" +
                            "[🚪 Inspect Doors](!getdoorprops)" +
                            "}}";
