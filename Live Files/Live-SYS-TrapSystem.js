@@ -1238,6 +1238,7 @@ const TrapSystem = {
          * @param {object} [extraTokens] - Optional. Object mapping extra tag names to token objects or IDs
          * @returns {object} - Map of tag name to token ID
          */
+
         buildTagToIdMap(trapToken, trappedToken, extraTokens) {
             const map = {};
             if (trapToken) map.trap = trapToken.id || trapToken;
@@ -1250,6 +1251,7 @@ const TrapSystem = {
             }
             return map;
         },
+        
         /**
          * Replace Roll20-style macro placeholders (e.g., @{selected|token_id}, @{target|token_id}, etc.) with token IDs based on order-sensitive tags at the end of the macro.
          * This supports both trap system automation and normal Roll20 macro use.
@@ -1263,6 +1265,7 @@ const TrapSystem = {
          * @param {object} tagToIdMap - Object mapping tag names to token IDs
          * @returns {string} - The processed macro with placeholders replaced
          */
+
         replaceMacroPlaceholdersWithTags(macro, tagToIdMap) {
             if (!macro) return "";
 
@@ -1293,7 +1296,7 @@ const TrapSystem = {
             return processedMacro;
         },
 
-        // [NEW] From MacroExport: Get object by ID (graphic, door, window, pathv2)
+        // From MacroExport: Get object by ID (graphic, door, window, pathv2)
         getObjectById(id) {
             return getObj("graphic", id) ||
                    getObj("door", id) ||
@@ -1301,7 +1304,7 @@ const TrapSystem = {
                    getObj("pathv2", id);
         },
 
-        // [NEW] From MacroExport: Get relevant state properties of an object
+        // From MacroExport: Get relevant state properties of an object
         getObjectState(obj) {
             if (!obj) return null;
             const type = obj.get("_type");
@@ -1389,8 +1392,9 @@ const TrapSystem = {
             return { pixelDistance, mapUnitDistance };
         },
 
-        // [NEW] Calculate dynamic aura radius to achieve a consistent visual size
+        // Calculate dynamic aura radius to achieve a consistent visual size
         calculateDynamicAuraRadius(token) {
+            
             /*
              * Roll20 Aura Rendering System (Discovered through testing):
              * 
@@ -1522,6 +1526,7 @@ const TrapSystem = {
          *                                 or null if the token is invalid.
          *                                 Corners are typically ordered: TL, TR, BR, BL (relative to unrotated token).
          */
+
         getOBBCorners(token) {
             if (!token) {
                 this.log('getOBBCorners: Invalid token provided.', 'error');
@@ -1579,6 +1584,7 @@ const TrapSystem = {
          * @param {Array<Object>} obbCorners - An array of 4 {x, y} points representing the OBB corners (e.g., TL, TR, BR, BL).
          * @returns {Object|null} The intersection point {x, y} closest to (p1x, p1y), or null if no intersection.
          */
+
         lineSegmentIntersectsOBB(p1x, p1y, p2x, p2y, obbCorners) {
             if (!obbCorners || obbCorners.length !== 4) {
                 this.log('lineSegmentIntersectsOBB: Invalid OBB corners provided.', 'error');
@@ -1616,6 +1622,7 @@ const TrapSystem = {
          * @param {Array<Object>} obbCorners - An array of 4 {x, y} points representing the OBB corners, ordered (e.g., TL, TR, BR, BL).
          * @returns {boolean} True if the point is inside or on the boundary of the OBB, false otherwise.
          */
+        
         isPointInOBB(point, obbCorners) {
             if (!point || !obbCorners || obbCorners.length !== 4) {
                 this.log('isPointInOBB: Invalid arguments.', 'error');
