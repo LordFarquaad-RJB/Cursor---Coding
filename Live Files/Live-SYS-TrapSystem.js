@@ -248,6 +248,15 @@ const TrapSystem = {
             sendChat('TrapSystem', `/w gm Could not find a valid recipient for ID [${recipientId}]. Msg: ${message}`);
         },
 
+        decodeHtml(text) {
+            if (typeof text !== 'string') return text;
+            return text.replace(/&amp;/g, '&')
+                       .replace(/&lt;/g, '<')
+                       .replace(/&gt;/g, '>')
+                       .replace(/&quot;/g, '"')
+                       .replace(/&#39;/g, "'");
+        },
+
         // Return a sanitized token image URL or a fallback icon
         getTokenImageURL(token, size = 'med') {
             if (!token) return '👤';
@@ -302,7 +311,7 @@ const TrapSystem = {
                         this.log(`Macro has no action: ${macroName}`, 'error');
                         return false;
                     }
-                } else if (commandString.startsWith('!') || commandString.startsWith('$')) {
+                } else if (commandString.startsWith('!') || commandString.startsWith('$') || commandString.startsWith('&{')) {
                     macroText = commandString;
                 } else {
                     // It's a plain text message, send it to chat and we're done.
@@ -325,34 +334,46 @@ const TrapSystem = {
                 const processedText = this.replaceMacroPlaceholdersWithTags(macroText, tagToIdMap);
         
                 // Execute the initial part of the macro
-                const remainingLines = processedText.split('\n');
-                const isApiCommand = line => line.trim().startsWith('!') || line.trim().startsWith('$');
-                const apiCommands = remainingLines.filter(isApiCommand);
-                const chatMessage = remainingLines.filter(line => !isApiCommand(line)).join('\n');
+                if (processedText.trim().startsWith('&{')) {
+                    sendChat('', processedText);
+                } else {
+                    const remainingLines = processedText.split('\n');
+                    const isApiCommand = line => line.trim().startsWith('!') || line.trim().startsWith('$');
+                    const isTemplateCommand = line => line.trim().startsWith('&{');
+                    
+                    const apiCommands = remainingLines.filter(isApiCommand);
+                    const templateCommands = remainingLines.filter(isTemplateCommand);
+                    const chatMessage = remainingLines.filter(line => !isApiCommand(line) && !isTemplateCommand(line)).join('\n');
 
-                // Send the combined chat message, if it exists
-                if (chatMessage.trim()) {
-                    sendChat('TrapSystem', chatMessage);
-                }
-
-                // Send each API command separately
-                apiCommands.forEach(apiCmd => {
-                    let finalCmd = apiCmd.trim();
-                    // If the command was stored with a $, convert it back to ! for execution
-                    if (finalCmd.startsWith('$')) {
-                        finalCmd = '!' + finalCmd.substring(1);
+                    // Send the combined chat message, if it exists
+                    if (chatMessage.trim()) {
+                        sendChat('TrapSystem', chatMessage);
                     }
-                    // If it's a token-mod command without an explicit ID, add the context token ID
-                    if (finalCmd.startsWith('!token-mod') && !finalCmd.includes('--ids')) {
-                        const contextTokenId = tagToIdMap.trap || tagToIdMap.trapped; // Prioritize trap, fallback to trapped
-                        if (contextTokenId) {
-                            // Inject the --ids parameter after the command but before other options
-                            finalCmd = `!token-mod --ids ${contextTokenId} ${finalCmd.substring('!token-mod'.length).trim()}`;
-                            this.log(`executeMacro: Injected ID into token-mod command: ${finalCmd}`, 'debug');
+
+                    // Send each template command separately as the GM to ensure it's parsed
+                    templateCommands.forEach(templateCmd => {
+                        sendChat('', templateCmd.trim());
+                    });
+
+                    // Send each API command separately
+                    apiCommands.forEach(apiCmd => {
+                        let finalCmd = apiCmd.trim();
+                        // If the command was stored with a $, convert it back to ! for execution
+                        if (finalCmd.startsWith('$')) {
+                            finalCmd = '!' + finalCmd.substring(1);
                         }
-                    }
-                    sendChat('API', finalCmd);
-                });
+                        // If it's a token-mod command without an explicit ID, add the context token ID
+                        if (finalCmd.startsWith('!token-mod') && !finalCmd.includes('--ids')) {
+                            const contextTokenId = tagToIdMap.trap || tagToIdMap.trapped; // Prioritize trap, fallback to trapped
+                            if (contextTokenId) {
+                                // Inject the --ids parameter after the command but before other options
+                                finalCmd = `!token-mod --ids ${contextTokenId} ${finalCmd.substring('!token-mod'.length).trim()}`;
+                                this.log(`executeMacro: Injected ID into token-mod command: ${finalCmd}`, 'debug');
+                            }
+                        }
+                        sendChat('API', finalCmd);
+                    });
+                }
         
                 // Now, handle the separated !triggerByTag command
                 if (triggerByTagCommand) {
@@ -616,6 +637,8 @@ const TrapSystem = {
                     const key = match[1].toLowerCase();
                     let value = match[2]; // Keep original casing and quotes
 
+                    value = TrapSystem.utils.decodeHtml(value);
+
                     switch (key) {
                         case "type": trapData.type = value.toLowerCase(); break;
                         case "uses":
@@ -690,7 +713,8 @@ const TrapSystem = {
                 let match;
                 while ((match = settingRegex.exec(trapData.rawDetectionBlock)) !== null) {
                     const key = match[1].toLowerCase();
-                    const value = match[2]; // Keep original casing for macro names etc.
+                    let value = match[2]; // Keep original casing for macro names etc.
+                    value = TrapSystem.utils.decodeHtml(value);
                     TrapSystem.utils.log(`[DEBUG parseTrapNotes] DetectionBlock Iteration: key='${key}', value='${value}'`, 'debug'); // Log key/value
                     switch (key) {
                         case "passivespotdc": 
@@ -2694,6 +2718,9 @@ const TrapSystem = {
                     content = content.substring(1, content.length - 1).trim();
                 }
 
+                if (content.startsWith('&{')) { // This is a roll template
+                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
                 }
@@ -2712,7 +2739,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content}"`;
+                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
             };
 
             let parts = [
@@ -3081,8 +3108,13 @@ const TrapSystem = {
             if (config && config.successMacro) {
                 const trappedToken = getObj("graphic", triggeredTokenId);
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken);
-                TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
-                TrapSystem.utils.whisper(playerid, `✅ Success macro '${config.successMacro}' executed.`);
+                const macroString = config.successMacro.trim();
+                TrapSystem.utils.executeMacro(macroString, tagToIdMap);
+                
+                // Only whisper confirmation for commands/macros, not for templates/text.
+                if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
+                    TrapSystem.utils.whisper(playerid, `✅ Success macro '${config.successMacro}' executed.`);
+                }
             } else {
                 TrapSystem.utils.whisper(playerid, "⚠️ No success macro defined for this trap.");
             }
@@ -3112,8 +3144,13 @@ const TrapSystem = {
             if (config && config.failureMacro) {
                 const trappedToken = getObj("graphic", triggeredTokenId);
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken);
-                TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
-                TrapSystem.utils.whisper(playerid, `❌ Failure macro '${config.failureMacro}' executed.`);
+                const macroString = config.failureMacro.trim();
+                TrapSystem.utils.executeMacro(macroString, tagToIdMap);
+            
+                // Only whisper confirmation for commands/macros, not for templates/text.
+                if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
+                    TrapSystem.utils.whisper(playerid, `❌ Failure macro '${config.failureMacro}' executed.`);
+                }
             } else {
                 TrapSystem.utils.whisper(playerid, "⚠️ No failure macro defined for this trap.");
             }
