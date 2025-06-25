@@ -275,7 +275,7 @@ const CommandMenu = {
                            "[🔦 Torch On](!token-mod --on light_hassight --set light_radius|?{Bright Radius|20} light_dimradius|?{Low Light Total|40})" +
                            "[⚫ Light Off](!token-mod --off light_hassight --set light_radius|0 light_dimradius|0)" +
                            "[🔄 Clear Statuses](!token-mod --set statusmarkers|=)" +
-                           "[💀 Toggle Dead](!token-mod --set statusmarkers|!dead)" +
+                           "[💀 Death Command](!token-mod --set statusmarkers|!dead --set layer|map --set bar1_value|0)" +
                            "[🔄 Set Default Token](!token-mod --set defaulttoken)" +
                            "[🔗 Unlink Character](!token-mod --set represents|)" +
                            "[❓ TokenMod Help](!token-mod --help)" +
@@ -379,7 +379,9 @@ const CommandMenu = {
                            "[🔄 Migrate Traps](!migrate-traps)<br>" +
                            "[✈️ Migrate Selected Traps](!migrate-traps selected)<br>" +
                            "[🔍 Inspect Object](!getselprops)<br>" +
-                           "[🚪 Inspect Doors](!getdoorprops)" +
+                           "[🚪 Inspect Doors](!getdoorprops)<br>" +
+                           "[🔄 Reset Triggers](!tt-reset)<br>" +
+                           "[🐞 Toggle Debug](!tt-debug)<br>" +
                            "}}";
 
                 case CommandMenu.config.MENU_SECTIONS.SYSTEM:
