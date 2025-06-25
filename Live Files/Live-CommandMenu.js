@@ -10,17 +10,18 @@ const CommandMenu = {
         LOG_LEVEL: "info",
         GM_ONLY: true,
         MENU_SECTIONS: {
-            SHOP: "shop",
-            TRAP: "trap",
-            TOKEN_FX: "tokenFX",
-            TOKEN_MOD: "tokenMod",
-            AUDIO: "audio",
-            COMBAT: "combat",
-            UTILITY: "utility",
-            LIGHTING: "lighting",
-            SYSTEM: "system"
+            SHOP: "ShopSystem",
+            TRAP: "TrapSystem",
+            TOKEN_FX: "TokenFX",
+            TOKEN_MOD: "TokenMod",
+            AUDIO: "Audio",
+            COMBAT: "Combat",
+            UTILITY: "Utility",
+            LIGHTING: "LightControl",
+            SYSTEM: "System"
         },
         KNOWN_SYSTEMS: {
+            'CommandMenu': { version: 'v1.1.0' },
             'TokenMod': { version: 'v0.8.84' },
             'Roll20AM': { version: 'v2.15' },
             'GroupCheck': { version: 'v1.15' },
@@ -29,11 +30,9 @@ const CommandMenu = {
             'TokenFX': { version: 'v1.0.0' },
             'TrapSystem': { version: 'v1.0.0' },
             'ShopSystem': { version: 'v1.0.0' },
-            'LightingControl': { version: 'v1.1.0' }
+            'LightControl': { version: 'v1.1.0' },
+            'TableTrigger': { version: 'v2.0.0' }
         },
-        experimentalApiTestCharacterIdentifier: "Roll 2024 Sheet",   // GM should change this to a valid Character Name or ID
-        experimentalApiTestAttributeName: "ac",          // GM should set this attribute on the test character
-        experimentalApiTestExpectedValue: "99",                         // GM should set this as the attribute's value
     },
 
     // State tracking
@@ -172,15 +171,15 @@ const CommandMenu = {
 
         getSectionEmoji(section) {
             const emojis = {
-                shop: "🏪",
-                trap: "🎯",
-                tokenFX: "🎨",
-                tokenMod: "🔧",
-                audio: "🎵",
-                combat: "⚔️",
-                utility: "🔧",
-                lighting: "💡",
-                system: "⚙️"
+                "ShopSystem": "🏪",
+                "TrapSystem": "🎯",
+                "TokenFX": "🎨",
+                "TokenMod": "🔧",
+                "Audio": "🎵",
+                "Combat": "⚔️",
+                "Utility": "🔧",
+                "LightControl": "💡",
+                "System": "⚙️"
             };
             return emojis[section] || "📋";
         },
@@ -218,6 +217,7 @@ const CommandMenu = {
                            "[📢 Display to Players](!shop display_to_players)" +
                            "[🛍️ Create Sample Shop](!shop sample)" +
                            "[📚 Item DB Init](!itemdb init)" +
+                           "[📥 Start Bulk Import](!itemdb import)" +
                            "[➕ Add Item to DB](!itemdb add)" +
                            "[📋 List All DB Items](!itemdb list all all)" +
                            "[📖 Import Sample Items](!itemdb sample)" +
@@ -227,9 +227,10 @@ const CommandMenu = {
                 
                 case CommandMenu.config.MENU_SECTIONS.TRAP:
                     return "{{Trap Controls=[" +
-                           "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
-                           "[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Auto Trigger|false|true})" +
+                           "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
+                           "[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                            "[🛠️ Setup Detection](!trapsystem passivemenu)" +
+                           "[👁️ Toggle Detection Aura](!trapsystem setpassive showaura &#64;{selected|token_id true)" +
                            "[🔄 Toggle Trap](!trapsystem toggle)" +
                            "[📊 Trap Status](!trapsystem status)" +
                            "[⚡ Trigger Trap](!trapsystem trigger)" +
@@ -371,8 +372,15 @@ const CommandMenu = {
                            "}}";
 
                 case CommandMenu.config.MENU_SECTIONS.UTILITY:
-                    return "{{Utility=[" +
-                           "]}}";
+                    return "{{Utility (GM Tools)=[" +
+                           "📋 Export Macros](!exportmacros)<br>" +
+                           "[🎯 Export Traps](!exporttraps)<br>" +
+                           "[📤 Export All Data](!exportall)<br>" +
+                           "[🔄 Migrate Traps](!migrate-traps)<br>" +
+                           "[✈️ Migrate Selected Traps](!migrate-traps selected)<br>" +
+                           "[🔍 Inspect Object](!getselprops)<br>" +
+                           "[🚪 Inspect Doors](!getdoorprops)" +
+                           "}}";
 
                 case CommandMenu.config.MENU_SECTIONS.SYSTEM:
                     return "{{System Operations=[" +
@@ -412,63 +420,82 @@ const CommandMenu = {
 
             let help = [
                 "&{template:default} {{name=Help Menu}}",
-                "{{Shop System=",
-                "• Create Shop: Make a new shop handout",
-                "• List Shops: Show all available shops",
-                "• Manage Stock: Add/remove items",
-                "• View Stock: See current inventory",
-                "• Categories: weapons, armor, potions, scrolls, magic, equipment}}",
-                "{{Trap System=",
-                "• Setup Standard Trap: Create a normal trap with macros",
-                "• Setup Interaction Trap: Create a trap with skill checks",
-                "• Toggle arms/disarms the selected trap",
-                "• Status shows current trap configuration",
-                "• Trigger opens the control panel",
-                "• Allow Movement frees a trapped token",
-                "• Standard Traps:",
-                "  - Up to 3 macros can be set",
-                "  - Movement options: Default, Center, or Grid",
-                "• Interaction Traps:",
-                "  - Success and failure macros",
-                "  - Up to 2 skill checks with DCs",
-                "  - Supports flat rolls (no modifiers)",
-                "  - Players can explain actions",
-                "• State Management (New!):",
-                "  - Export State & Macros: Saves current token/object states and macro actions.",
-                "  - Reset Token/Object States: Restores saved physical states of tokens and objects.",
-                "  - Reset Macro Actions: Restores macro actions to their saved versions.",
-                "  - Full Reset: Performs both state and macro action resets.",
+                "{{Shop System=" +
+                "• Create Shop: Make a new shop handout<br>" +
+                "• List Shops: Show all available shops<br>" +
+                "• Manage Stock: Add/remove items<br>" +
+                "• View Stock: See current inventory<br>" +
+                "• Categories: weapons, armor, potions, scrolls, magic, equipment" +
                 "}}",
-                "{{Lighting Controls (New!)=[" +
-                "• Wall Commands: Hide, reveal, move, or change layer of Dynamic Lighting walls.",
-                "• Door Commands: Open, close, lock, unlock, reveal individual doors/windows, all on page, or in an area.",
-                "• Toggle Darkness: Turn lights on/off in an area, remembering previous states (uses TokenMod).",
-                "• GM Only: Page/Area door commands and Toggle Darkness require GM privileges.",
-                "• Select Token: Area commands (doors, darkness) are centered on selected token(s).",
-                "• Help: `!lc help` for detailed command syntax.",
-                "]}}",
-                "{{Token Effects=",
-                "• Set Aura adds visible radius",
-                "• List commands show available effects",
-                "• Stop FX cancels all active effects",
-                "• Stop All Audio ends all sounds}}",
-                "{{Audio Controls=",
-                "• Import: Load audio configuration",
-                "• Track Menu: Manage available tracks",
-                "• Edit Access: Set player permissions",
-                "• Play/Stop: Basic audio controls}}",
-                "{{Combat Tools=",
-                "• Initiative: Roll for selected tokens",
-                "• Reroll: New initiative for current order",
-                "• Sort/Clear: Manage turn order",
-                "• Config: Advanced settings}}",
-                "{{Token Controls=",
-                "• Set Aura: Add visible radius",
-                "• Token Help: Show all token commands",
-                "• List/Stop: Manage visual effects}}",
-                "{{Utility=",
-                "• Reset State restores saved setup}}",
-                "{{Note=Most commands work with selected tokens}}"
+                "{{Trap System=" +
+                "• Setup Standard Trap: Create a normal trap with macros<br>" +
+                "• Setup Interaction Trap: Create a trap with skill checks<br>" +
+                "• Toggle arms/disarms the selected trap<br>" +
+                "• Status shows current trap configuration<br>" +
+                "• Trigger opens the control panel<br>" +
+                "• Allow Movement frees a trapped token<br>" +
+                "**- Standard Traps:**<br>" +
+                "&nbsp;&nbsp;- Up to 3 macros can be set<br>" +
+                "&nbsp;&nbsp;- Movement options: Default, Center, or Grid<br>" +
+                "**- Interaction Traps:**<br>" +
+                "&nbsp;&nbsp;- Success and failure macros<br>" +
+                "&nbsp;&nbsp;- Up to 2 skill checks with DCs<br>" +
+                "&nbsp;&nbsp;- Supports flat rolls (no modifiers)<br>" +
+                "&nbsp;&nbsp;- Players can explain actions<br>" +
+                "**- State Management (New!):**<br>" +
+                "&nbsp;&nbsp;- Export State & Macros: Saves current token/object states and macro actions.<br>" +
+                "&nbsp;&nbsp;- Reset Token/Object States: Restores saved physical states of tokens and objects.<br>" +
+                "&nbsp;&nbsp;- Reset Macro Actions: Restores macro actions to their saved versions.<br>" +
+                "&nbsp;&nbsp;- Full Reset: Performs both state and macro action resets." +
+                "}}",
+                "{{Lighting Controls (New!)=" +
+                "• Wall Commands: Hide, reveal, move, or change layer of Dynamic Lighting walls.<br>" +
+                "• Door Commands: Open, close, lock, unlock, reveal individual doors/windows, all on page, or in an area.<br>" +
+                "• Toggle Darkness: Turn lights on/off in an area, remembering previous states (uses TokenMod).<br>" +
+                "• GM Only: Page/Area door commands and Toggle Darkness require GM privileges.<br>" +
+                "• Select Token: Area commands (doors, darkness) are centered on selected token(s).<br>" +
+                "• Help: `!lc help` for detailed command syntax." +
+                "}}",
+                "{{Token Effects=" +
+                "• Set Aura adds visible radius<br>" +
+                "• List commands show available effects<br>" +
+                "• Stop FX cancels all active effects<br>" +
+                "• Stop All Audio ends all sounds" +
+                "}}",
+                "{{Audio Controls=" +
+                "• Import: Load audio configuration<br>" +
+                "• Track Menu: Manage available tracks<br>" +
+                "• Edit Access: Set player permissions<br>" +
+                "• Play/Stop: Basic audio controls" +
+                "}}",
+                "{{Combat Tools=" +
+                "• Initiative: Roll for selected tokens<br>" +
+                "• Reroll: New initiative for current order<br>" +
+                "• Sort/Clear: Manage turn order<br>" +
+                "• Config: Advanced settings" +
+                "}}",
+                "{{Token Controls=" +
+                "• Set Aura: Add visible radius<br>" +
+                "• Token Help: Show all token commands<br>" +
+                "• List/Stop: Manage visual effects" +
+                "}}",
+                "{{Utility=" +
+                "**- Table Controls (New!):**<br>" +
+                "• Roll Table by Name: Rolls a specified rollable table and outputs the result to chat. Can whisper results." +
+                "}}",
+                "{{Note=Most commands work with selected tokens}}",
+                "{{Direct Menu Commands=" +
+                "Use these to open a specific menu:<br>" +
+                "• `!menu ShopSystem`<br>" +
+                "• `!menu TrapSystem`<br>" +
+                "• `!menu TokenFX`<br>" +
+                "• `!menu TokenMod`<br>" +
+                "• `!menu Audio`<br>" +
+                "• `!menu Combat`<br>" +
+                "• `!menu Utility`<br>" +
+                "• `!menu LightControl`<br>" +
+                "• `!menu System`" +
+                "}}"
             ];
 
             sendChat("API", `/w gm ${help.join(" ")}`, null, {noarchive: true});
@@ -492,60 +519,33 @@ on("ready", async function() {
         CommandMenu.utils.addInitStatus('TokenFX', 'pending', 'TokenFX not detected or not yet initialized.', 'pending');
     }
 
-    // [NEW] Check for Experimental Sandbox features using a specific character attribute value
-    let newApiFeaturesConfirmed = false;
-    const charIdentifier = CommandMenu.config.experimentalApiTestCharacterIdentifier;
-    const attrName = CommandMenu.config.experimentalApiTestAttributeName;
-    const expectedValue = CommandMenu.config.experimentalApiTestExpectedValue;
-    let character = null;
-
-    if (charIdentifier && attrName && expectedValue) {
-        // Try to get character by ID first
-        character = getObj("character", charIdentifier);
-        // If not found by ID, try by name
-        if (!character) {
-            const charactersFound = findObjs({ _type: "character", name: charIdentifier });
-            if (charactersFound.length > 0) {
-                character = charactersFound[0];
-                if (charactersFound.length > 1) {
-                    CommandMenu.utils.log(`Multiple characters found with name "${charIdentifier}". Using the first one found (ID: ${character.id}) for API test.`, 'warning');
-                }
-            }
-        }
-
-        if (character) {
-            if (typeof getSheetItem === 'function') {
-                try {
-                    // Await the result of getSheetItem as it's asynchronous
-                    const retrievedValue = await getSheetItem(character.id, attrName);
-                    CommandMenu.utils.log(`API Test: Character "${character.get('name')}" (${character.id}), Attribute "${attrName}", Retrieved Value: "${retrievedValue}", Expected: "${expectedValue}"`, 'debug');
-                    if (retrievedValue !== null && typeof retrievedValue !== 'undefined' && String(retrievedValue) === String(expectedValue)) {
-                        newApiFeaturesConfirmed = true;
-                    } else {
-                        CommandMenu.utils.log(`API Test: Value mismatch or attribute not found. Retrieved: "${retrievedValue}", Expected: "${expectedValue}"`, 'warning');
-                    }
-                } catch (e) {
-                    CommandMenu.utils.log(`API Test: Error calling getSheetItem for character ${character.id}, attribute ${attrName}: ${e.message}`, 'error');
-                }
-            } else {
-                CommandMenu.utils.log('API Test: getSheetItem function is not defined.', 'warning');
-            }
+    // [NEW] Check for Sandbox version directly
+    try {
+        const sandboxVersion = (Campaign() || {}).sandboxVersion || 'default';
+        if (sandboxVersion.toLowerCase() === 'default') {
+            CommandMenu.utils.addInitStatus(
+                'Sandbox', 
+                'warning', 
+                'Running on Legacy Sandbox. Some features may be unavailable.', 
+                'warning'
+            );
         } else {
-            CommandMenu.utils.log(`API Test: Character "${charIdentifier}" not found. Skipping experimental API feature check.`, 'warning');
+            const sandboxType = sandboxVersion.toLowerCase().includes('experimental') ? 'Experimental' : 'Standard';
+            CommandMenu.utils.addInitStatus(
+                `Sandbox (${sandboxType})`, 
+                'success', 
+                `Running on New Sandbox (v${sandboxVersion}).`, 
+                'success'
+            );
         }
-    } else {
-        CommandMenu.utils.log('API Test: Configuration for experimental API check is incomplete. Skipping check.', 'warning');
-    }
-
-    if (newApiFeaturesConfirmed) {
-        CommandMenu.utils.addInitStatus('SandboxFeatures', 'success', `Newer API features confirmed via Character '${charIdentifier}' attribute '${attrName}'.`, 'success');
-    } else {
+    } catch (e) {
         CommandMenu.utils.addInitStatus(
-            'SandboxFeatures', 
-            'warning', 
-            `Failed to confirm newer API features using Character '${charIdentifier}' attribute '${attrName}'. Expected value: '${expectedValue}'. Ensure character & attribute are set correctly and sandbox is up-to-date.`, 
-            'warning'
+            'Sandbox',
+            'error',
+            'Could not determine Sandbox version. Assume Legacy.',
+            'error'
         );
+        CommandMenu.utils.log(`Sandbox Check Error: ${e.message}`, 'error');
     }
     
     // Show startup menu after a short delay to allow other systems to initialize
