@@ -2261,7 +2261,7 @@ const TrapSystem = {
 
                 let triggerOptionsString = "";
                 if (data.primaryMacro && data.primaryMacro.macro) {
-                    triggerOptionsString += `[🎯 ${data.primaryMacro.name}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${data.primaryMacro.macro})`;
+                    triggerOptionsString += `[🎯 ${data.primaryMacro.name || data.primaryMacro.macro}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${data.primaryMacro.macro})`;
                 }
 
                 if(data.options && data.options.length) {
@@ -2433,7 +2433,7 @@ const TrapSystem = {
 
             if (data.type === "interaction") {
                 if (data.primaryMacro && data.primaryMacro.name) {
-                    msg.push(`{{Primary Macro=${data.primaryMacro.name}}}`);
+                    msg.push(`{{Primary Macro=${data.primaryMacro.name || data.primaryMacro.macro}}}`);
                 }
                 if (data.successMacro) {
                     msg.push(`{{Success Macro=${data.successMacro}}}`);
@@ -2447,7 +2447,7 @@ const TrapSystem = {
                 }
             } else { // Standard trap
                 if (data.primaryMacro && data.primaryMacro.name) {
-                    msg.push(`{{Primary Macro=${data.primaryMacro.name}}}`);
+                    msg.push(`{{Primary Macro=${data.primaryMacro.name || data.primaryMacro.macro}}}`);
                 }
                 if (Array.isArray(data.options) && data.options.length) {
                     const optionsList = data.options.map((opt, index) => `${index + 1}. ${opt.name}`).join('<br>');

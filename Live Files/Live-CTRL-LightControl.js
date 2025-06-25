@@ -7,7 +7,9 @@ const LightControl = {
     // Configuration
     config: {
         DEFAULT_GRID_SIZE: 70,
-        VALID_LAYERS: ["walls", "gmlayer", "map", "objects"]
+        VALID_LAYERS: ["walls", "gmlayer", "map", "objects"],
+        VERBOSE_WALL_MOVEMENTS: false,  // Set to false to reduce chat clutter from wall movement traps
+        VERBOSE_DOOR_OPERATIONS: false  // Set to false to reduce chat clutter from door operations
     },
 
     // Utility functions
@@ -26,6 +28,16 @@ const LightControl = {
         },
         sendGmMessage(content) {
             sendChat("LightControl", `/w gm ${content}`, null, { noarchive: true });
+        },
+        logWallMovement(message) {
+            if (LightControl.config.VERBOSE_WALL_MOVEMENTS) {
+                LightControl.utils.sendGmMessage(message);
+            }
+        },
+        logDoorOperation(message) {
+            if (LightControl.config.VERBOSE_DOOR_OPERATIONS) {
+                LightControl.utils.sendGmMessage(message);
+            }
         }
     },
 
@@ -43,27 +55,26 @@ const LightControl = {
             }
             const helpMsg = [
                 "&{template:default} {{name=LightControl Help}}",
-                "{{Core Commands=}}",
-                "{{**!wall** = Manipulate Dynamic Lighting (pathv2) walls.}}",
-                "{{  `!wall [ID] <action> [gridSize] [grids]`}}",
-                "{{  Actions: `moveLeft`, `moveRight`, `moveUp`, `moveDown`, `hide`, `reveal`, `layer <layerName>`}}",
-                "{{  Example: `!wall -Mxyz123 moveLeft 70 2`}}",
-                "{{**!door** = Manipulate native Door/Window objects.}}",
-                "{{  `!door [ID|<all_on_page>|<area shape dimension action>] <action_if_ID_or_all_on_page>`}}",
-                "{{  Actions: `open`, `close`, `lock`, `unlock`, `reveal`, `set_secret_true`}}",
-                "{{  Area Ops: `!door area square <grids> <action>` or `!door area circle <grids> <action>`}}",
-                "{{  Example (single): `!door -Mabc456 open`}}",
-                "{{  Example (page): `!door all_on_page lock`}}",
-                "{{  Example (area): `!door area square 5 open`}}",
-                "{{**!lc toggledarkness** = Toggles lights off/on in an area, remembering previous states.}}",
-                "{{  `!lc toggledarkness <shape> [dimensions...] [--id <switch_name>]`}}",
-                "{{  Shapes: `square <grids>`, `circle <grids>`}}",
-                "{{  Example: `!lc toggledarkness square 5`}}",
-                "{{  Example: `!lc toggledarkness circle 3 --id room_torch`}}",
-                "{{---General---}}",
-                "{{`!lc help` or `!lightcontrol help` = Shows this help message.}}",
-                // Placeholder for future commands
-                "{{More commands coming soon!}}"
+                "{{Commands=<b>!wall</b> (Dynamic Lighting walls)<br>" +
+                "• <code>!wall [ID] [gridSize] [grids]</code><br>" +
+                "&nbsp;&nbsp;• Actions: <code>moveLeft</code>, <code>moveRight</code>, <code>moveUp</code>, <code>moveDown</code>, <code>hide</code>, <code>reveal</code>, <code>layer</code><br>" +
+                "&nbsp;&nbsp;• Example: <code>!wall -Mxyz123 moveLeft 70 2</code><br>" +
+                "&nbsp;&nbsp;• <b>Note:</b> Wall movement messages can be disabled via <code>config.VERBOSE_WALL_MOVEMENTS</code><br><br>" +
+                "<b>!door</b> (Native Door/Window objects)<br>" +
+                "• <code>!door [ID|all_on_page|area shape dimension action] [action]</code><br>" +
+                "&nbsp;&nbsp;• Actions: <code>open</code>, <code>close</code>, <code>lock</code>, <code>unlock</code>, <code>reveal</code>, <code>set_secret_true</code><br>" +
+                "&nbsp;&nbsp;• Area Ops: <code>!door area square &lt;grids&gt; &lt;action&gt;</code> or <code>!door area circle &lt;grids&gt; &lt;action&gt;</code><br>" +
+                "&nbsp;&nbsp;• Example (single): <code>!door -Mabc456 open</code><br><br>" +
+                "&nbsp;&nbsp;• Example (page): <code>!door all_on_page lock</code><br>" +
+                "&nbsp;&nbsp;• Example (area): <code>!door area square 5 open</code><br>" +
+                "&nbsp;&nbsp;• <b>Note:</b> Door operation messages can be disabled via <code>config.VERBOSE_DOOR_OPERATIONS</code>}}",
+                "{{!lc toggledarkness=<b>!lc toggledarkness</b> (Toggle lights off/on in an area)<br>" +
+                "• <code>!lc toggledarkness [shape] [dimensions...] [--id switch_name]</code><br>" +
+                "&nbsp;&nbsp;• Shapes: <code>square &lt;grids&gt;</code>, <code>circle &lt;grids&gt;</code><br>" +
+                "&nbsp;&nbsp;• Example: <code>!lc toggledarkness square 5</code><br>" +
+                "&nbsp;&nbsp;• Example: <code>!lc toggledarkness circle 3 --id room_torch</code>}}",
+                "{{General=<b>Help:</b> <code>!lc help</code> or <code>!lightcontrol help</code> = Shows this help message.<br>" +
+                "<b>Configuration:</b> Set <code>config.VERBOSE_WALL_MOVEMENTS</code> and <code>config.VERBOSE_DOOR_OPERATIONS</code> to <code>false</code> to reduce chat clutter from traps and automated operations.<br>}}"
             ].join(" ");
             LightControl.utils.sendGmMessage(helpMsg);
         }
@@ -102,32 +113,32 @@ const LightControl = {
             switch (action) {
                 case "moveright":
                     wall.set("x", currentX + totalMove);
-                    LightControl.utils.sendGmMessage(`🏗️ **Wall Moved Right (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
+                    LightControl.utils.logWallMovement(`🏗️ **Wall Moved Right (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
                     break;
 
                 case "moveleft":
                     wall.set("x", currentX - totalMove);
-                    LightControl.utils.sendGmMessage(`🏗️ **Wall Moved Left (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
+                    LightControl.utils.logWallMovement(`🏗️ **Wall Moved Left (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
                     break;
 
                 case "moveup":
                     wall.set("y", currentY - totalMove);
-                    LightControl.utils.sendGmMessage(`🏗️ **Wall Moved Up (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
+                    LightControl.utils.logWallMovement(`🏗️ **Wall Moved Up (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
                     break;
 
                 case "movedown":
                     wall.set("y", currentY + totalMove);
-                    LightControl.utils.sendGmMessage(`🏗️ **Wall Moved Down (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
+                    LightControl.utils.logWallMovement(`🏗️ **Wall Moved Down (${gridsToMove} grids, ${totalMove}px):** ${wallID}`);
                     break;
 
                 case "hide":
                     wall.set("layer", "gmlayer");
-                    LightControl.utils.sendGmMessage(`🔥 **Wall Hidden (GM Layer):** ${wallID}`);
+                    LightControl.utils.logWallMovement(`🔥 **Wall Hidden (GM Layer):** ${wallID}`);
                     break;
 
                 case "reveal":
                     wall.set("layer", "walls");
-                    LightControl.utils.sendGmMessage(`👁 **Wall Revealed (Dynamic Lighting Layer):** ${wallID}`);
+                    LightControl.utils.logWallMovement(`👁 **Wall Revealed (Dynamic Lighting Layer):** ${wallID}`);
                     break;
 
                 case "layer": {
@@ -138,7 +149,7 @@ const LightControl = {
                     }
 
                     wall.set("layer", newLayer);
-                    LightControl.utils.sendGmMessage(`🔄 **Wall Moved to Layer: ${newLayer}**`);
+                    LightControl.utils.logWallMovement(`🔄 **Wall Moved to Layer: ${newLayer}**`);
                     break;
                 }
 
@@ -200,7 +211,7 @@ const LightControl = {
                 return;
             }
             let feedback = this.applyActionToDoorObject(door, action);
-            LightControl.utils.sendGmMessage(feedback || `❓ Unknown action or issue with door ${doorID}.`);
+            LightControl.utils.logDoorOperation(feedback || `❓ Unknown action or issue with door ${doorID}.`);
         },
 
         applyActionToDoorObject(doorObject, action) {
@@ -256,9 +267,9 @@ const LightControl = {
             });
 
             if (changedCount > 0) {
-                LightControl.utils.sendGmMessage(`🚪 Processed ${changedCount} door(s)/window(s) on the page. Action: ${action}.`);
+                LightControl.utils.logDoorOperation(`🚪 Processed ${changedCount} door(s)/window(s) on the page. Action: ${action}.`);
             } else {
-                LightControl.utils.sendGmMessage(`🚪 No doors/windows were affected by the action \`${action}\` on this page (possibly due to type mismatch for secret actions or invalid action).`);
+                LightControl.utils.logDoorOperation(`🚪 No doors/windows were affected by the action \`${action}\` on this page (possibly due to type mismatch for secret actions or invalid action).`);
             }
         },
 
@@ -316,7 +327,7 @@ const LightControl = {
             }
 
             if (affectedObjects.length === 0) {
-                LightControl.utils.sendGmMessage(`🚪 No doors or windows found in the specified ${shape} area.`);
+                LightControl.utils.logDoorOperation(`🚪 No doors or windows found in the specified ${shape} area.`);
                 return;
             }
 
@@ -328,7 +339,7 @@ const LightControl = {
                 }
             });
 
-            LightControl.utils.sendGmMessage(`🚪 Processed ${changedCount} of ${affectedObjects.length} door(s)/window(s) in the ${shape} area with action: ${action}.`);
+            LightControl.utils.logDoorOperation(`🚪 Processed ${changedCount} of ${affectedObjects.length} door(s)/window(s) in the ${shape} area with action: ${action}.`);
         }
     },
 
