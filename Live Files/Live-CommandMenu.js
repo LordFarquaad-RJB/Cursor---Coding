@@ -31,7 +31,9 @@ const CommandMenu = {
             'TrapSystem': { version: 'v1.0.0' },
             'ShopSystem': { version: 'v1.0.0' },
             'LightControl': { version: 'v1.1.0' },
-            'TableTrigger': { version: 'v2.0.0' }
+            'TableTrigger': { version: 'v2.0.0' },
+            'TrapMigrator': { version: 'v5.0.0' },
+            'DataExporter': { version: 'v1.0.0' }
         },
     },
 
@@ -230,7 +232,7 @@ const CommandMenu = {
                            "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                            "[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                            "[🛠️ Setup Detection](!trapsystem passivemenu)" +
-                           "[👁️ Toggle Detection Aura](!trapsystem setpassive showaura &#64;{selected|token_id true)" +
+                           "[👁️ Set Detection Aura](!trapsystem setpassive showaura &#64;{selected|token_id} ?{Aura State?|On,true|Off,false})" +
                            "[🔄 Toggle Trap](!trapsystem toggle)" +
                            "[📊 Trap Status](!trapsystem status)" +
                            "[⚡ Trigger Trap](!trapsystem trigger)" +
@@ -378,6 +380,7 @@ const CommandMenu = {
                            "[📤 Export All Data](!exportall)<br>" +
                            "[🔄 Migrate Traps](!migrate-traps)<br>" +
                            "[✈️ Migrate Selected Traps](!migrate-traps selected)<br>" +
+                           "[🧪 Dry Run Migration](!migrate-traps --dry-run)<br>" +
                            "[🔍 Inspect Object](!getselprops)<br>" +
                            "[🚪 Inspect Doors](!getdoorprops)<br>" +
                            "[🔄 Reset Triggers](!tt-reset)<br>" +
