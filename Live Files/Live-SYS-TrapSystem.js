@@ -4138,13 +4138,25 @@ const TrapSystem = {
             let decodedNotes = "";
             try { decodedNotes = decodeURIComponent(notes); } catch (e) { decodedNotes = notes; }
 
-            const detectionBlockRegex = /\{!trapdetection\s+([^}]+)\}/;
+            // This regex is specifically designed not to match across different {!...} blocks.
+            const detectionBlockRegex = /\{!trapdetection\s+((?:(?!\{!}).)*)\}/;
             const match = decodedNotes.match(detectionBlockRegex);
 
-            if (match && !/detected:\s*\[on\]/.test(match[1])) {
-                const newDetectionBlock = match[1] + ' detected:[on]';
-                const updatedNotes = decodedNotes.replace(detectionBlockRegex, `{!trapdetection ${newDetectionBlock}}`);
+            if (match && match[1] && !/detected:\s*\[on\]/.test(match[1])) {
+                const originalFullBlock = match[0];
+                const originalBlockContent = match[1];
+                
+                // Add the detected flag to the content
+                const newBlockContent = originalBlockContent.trim() + ' detected:[on]';
+                // Reconstruct the full block string
+                const newFullBlock = `{!trapdetection ${newBlockContent}}`;
+                
+                // Replace the old block with the new one in the notes
+                const updatedNotes = decodedNotes.replace(originalFullBlock, newFullBlock);
+                
                 noticedTrap.set("gmnotes", encodeURIComponent(updatedNotes));
+                // Re-parse the notes to get the most up-to-date config for message generation
+                trapConfig = TrapSystem.utils.parseTrapNotes(updatedNotes, noticedTrap, false);
             }
 
 
