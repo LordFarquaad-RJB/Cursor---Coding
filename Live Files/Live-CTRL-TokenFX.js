@@ -354,8 +354,6 @@ const TokenFX = {
         // Template for FX menu messages
         fxMenuTemplate: {
             header: "🎭 **TokenFX Menu**",
-            fxInfo: "**FX:** {fxName}",
-            loopInfo: "**Loop ID:** {loopID}",
             stopButton: "[⏹️ Stop FX](!stopFxLoop {loopID})",
             otherCommands: "**Other Commands:**\n{otherCommands}",
             footer: "---"
@@ -387,12 +385,40 @@ const TokenFX = {
             chainStartTime: null
         },
         chainResetTimeout: null,
-        fxMenuQueue: [],
         fxMenuTimeout: null,
     },
 
     // Utility functions
     utils: {
+        getTokenImageURL(token, size = 'thumb') {
+            if (!token) return '👤';
+
+            const sanitize = (url) => {
+                if (!url) return null;
+                let processed = url.replace(/(thumb|max)(?=\.[^/]+$)/, size);
+                processed = processed.replace(/\(/g, '%28')
+                                 .replace(/\)/g, '%29')
+                                 .replace(/'/g, '%27')
+                                 .replace(/"/g, '%22');
+                return processed;
+            };
+
+            let img = token.get('imgsrc');
+            if (!img) {
+                const charId = token.get('represents');
+                if (charId) {
+                    const char = getObj('character', charId);
+                    if (char) {
+                        img = char.get('avatar');
+                        if (!img) img = char.get('imgsrc');
+                    }
+                }
+            }
+
+            const sanitized = sanitize(img);
+            return sanitized || '👤';
+        },
+        
         parsePrefixedParams(argsArray) {
             const params = {};
             const multiParams = ['ID', 'TD', 'TR', 'TI', 'TARGET'];
@@ -674,20 +700,106 @@ const TokenFX = {
                 }
                 delete TokenFX.state.activeFxLoops[loopID];
                 if (TokenFX.config.INFO_MESSAGES_ENABLED) sendChat("TokenFX", `/w gm ✅ FX Loop **${loopID}** stopped.`);
+                
+                // After stopping a loop, refresh the menu if it was persistent
+                const isPersistent = (loopData.globalRepeats === "infinite" || loopData.globalRepeats > 1) || Object.values(loopData.tokens || {}).some(t => t.TRrepeats === "infinite" || t.TRrepeats > 1);
+                if (isPersistent && TokenFX.config.MENU_CONSOLIDATION_ENABLED) {
+                    if (TokenFX.state.fxMenuTimeout) clearTimeout(TokenFX.state.fxMenuTimeout);
+                    TokenFX.state.fxMenuTimeout = setTimeout(() => TokenFX.utils.buildAndSendConsolidatedMenu(false), TokenFX.config.MENU_CONSOLIDATION_DELAY_MS || 250);
+                }
+
             } else {
                 TokenFX.utils.log(`stopFxLoop: LoopID ${loopID} not found in activeFxLoops.`, 'warning');
                 if (TokenFX.config.INFO_MESSAGES_ENABLED) sendChat("TokenFX", `/w gm ⚠️ FX Loop **${loopID}** not found or already stopped.`);
             }
         },
 
-        buildAndSendConsolidatedMenu() {
-            if (TokenFX.state.fxMenuQueue.length === 0) return;
+        buildAndSendConsolidatedMenu(isManualRequest = false) {
+            if (TokenFX.state.fxMenuTimeout) {
+                clearTimeout(TokenFX.state.fxMenuTimeout);
+                TokenFX.state.fxMenuTimeout = null;
+            }
 
-            let menu = `&{template:default} {{name=🎭 TokenFX Menu}}`;
+            const isLoopPersistent = (loopData) => {
+                if (!loopData) return false;
+                const isGloballyRepeating = loopData.globalRepeats === "infinite" || loopData.globalRepeats > 1;
+                const hasRepeatingTokens = Object.values(loopData.tokens).some(t => t.TRrepeats === "infinite" || t.TRrepeats > 1);
+                return isGloballyRepeating || hasRepeatingTokens;
+            };
+            
+            const groups = {};
+            Object.keys(TokenFX.state.activeFxLoops).forEach(loopID => {
+                const loopData = TokenFX.state.activeFxLoops[loopID];
 
-            TokenFX.state.fxMenuQueue.forEach(item => {
-                const stopButton = TokenFX.config.fxMenuTemplate.stopButton.replace(/{loopID}/g, item.loopID);
-                menu += `{{FX: ${item.fxDisplayName}=**Loop ID:** \`${item.loopID}\`<br>${stopButton}}}`;
+                if (isLoopPersistent(loopData)) {
+                    // A single loop can affect multiple tokens. We must treat the entire loop as one logical unit.
+                    // We will group loops if they affect tokens with the same name and use the same effect.
+                    const tokenDatas = Object.values(loopData.tokens);
+                    if (tokenDatas.length === 0) return;
+
+                    const representativeToken = tokenDatas[0];
+                    const tokenName = representativeToken.name || 'Unnamed Token';
+                    const fxDisplayName = loopData.fxDisplayName;
+                    const imgURL = representativeToken.imgURL || '👤';
+
+                    // Group by a composite key of the primary token's name, its image, and the effect name.
+                    const groupKey = `${tokenName}-${fxDisplayName}-${imgURL}`;
+
+                    if (!groups[groupKey]) {
+                        groups[groupKey] = {
+                            tokenName: tokenName,
+                            fxDisplayName: fxDisplayName,
+                            imgURL: imgURL,
+                            loopIDs: [],
+                            // If a loop has multiple tokens, display their names.
+                            fullDisplayName: tokenDatas.map(t => t.name || 'Unnamed').join(', ')
+                        };
+                    }
+                    groups[groupKey].loopIDs.push(loopID);
+                }
+            });
+
+            if (Object.keys(groups).length === 0) {
+                if (isManualRequest) {
+                    sendChat("TokenFX", `/w gm &{template:default} {{name=🎭 Active FX Dashboard}} {{Status=✅ No persistent FX loops are currently running.}}`);
+                }
+                return;
+            }
+            
+            let menu = `&{template:default} {{name=🎭 Active FX Dashboard}}`;
+            let fxCounter = 0;
+
+            Object.values(groups).forEach(group => {
+                fxCounter++;
+                const loopCount = group.loopIDs.length;
+                const tokenImage = group.imgURL === '👤' ? '👤' : `<img src="${group.imgURL}" style="width: 40px; height: 40px; vertical-align: middle; border-radius: 4px;">`;
+                
+                let stopButton;
+                let title;
+
+                if (loopCount > 1) {
+                    const ids = group.loopIDs.join(',');
+                    stopButton = `[⏹️ Stop All (${loopCount})](!stopFxLoops ${ids})`;
+                    title = `${loopCount}x ${group.tokenName}`;
+                } else {
+                    stopButton = `[⏹️ Stop](!stopFxLoop ${group.loopIDs[0]})`;
+                    // If the single loop had multiple tokens, show all their names.
+                    title = group.fullDisplayName;
+                }
+
+                const rowKey = `FX ${fxCounter}<br>${group.fxDisplayName}`;
+
+                const rowContent = `<table style="width:100%; border:none; border-collapse: collapse; margin-left: -7px;">` +
+                                       `<tr style="vertical-align: middle;">` +
+                                           `<td style="width: 48px; padding: 0 8px 0 0;">${tokenImage}</td>` +
+                                           `<td style="line-height: 1.2;">` +
+                                               `<span style="font-weight:bold;">${title}</span>` +
+                                           `</td>` +
+                                           `<td style="text-align: right; padding-left: 8px;">${stopButton}</td>` +
+                                       `</tr>` +
+                                   `</table>`;
+
+                menu += `{{${rowKey}=${rowContent}}}`;
             });
 
             let otherCommands = "";
@@ -699,13 +811,6 @@ const TokenFX = {
             }
 
             sendChat("TokenFX", `/w gm ${menu}`);
-
-            // Clear the queue and timeout handle
-            TokenFX.state.fxMenuQueue = [];
-            if (TokenFX.state.fxMenuTimeout) {
-                clearTimeout(TokenFX.state.fxMenuTimeout);
-                TokenFX.state.fxMenuTimeout = null;
-            }
         },
     },
 
@@ -1054,12 +1159,21 @@ const TokenFX = {
                     tr = 1;
                 }
 
+                const tokenObj = getObj("graphic", id);
+                if (!tokenObj) {
+                    TokenFX.utils.log(`Source token with ID ${id} not found. Skipping from this loop.`, 'warning');
+                    sendChat("TokenFX", `/w gm ⚠️ **Warning:** Source token with ID \`${id}\` was not found and has been skipped.`);
+                    continue; 
+                }
+
                 loopData.tokens[id] = {
                     TDelay: td,
                     TRrepeats: tr,
                     TInterval: ti,
                     internalTimeouts: [],
-                    currentRepeat: 0
+                    currentRepeat: 0,
+                    name: tokenObj.get('name'),
+                    imgURL: TokenFX.utils.getTokenImageURL(tokenObj, 'thumb')
                 };
             }
             
@@ -1080,12 +1194,17 @@ const TokenFX = {
                 return; // Stop processing this command
             }
 
+            // --- Menu Generation Logic ---
+            const isPersistent = (loopData.globalRepeats === "infinite" || loopData.globalRepeats > 1) || 
+                                 Object.values(loopData.tokens).some(t => t.TRrepeats === "infinite" || t.TRrepeats > 1);
+
+            if (isPersistent) {
             if (TokenFX.config.MENU_CONSOLIDATION_ENABLED) {
-                TokenFX.state.fxMenuQueue.push({ loopID: loopID, fxDisplayName: loopData.fxDisplayName });
                 if (TokenFX.state.fxMenuTimeout) clearTimeout(TokenFX.state.fxMenuTimeout);
-                TokenFX.state.fxMenuTimeout = setTimeout(TokenFX.utils.buildAndSendConsolidatedMenu, TokenFX.config.MENU_CONSOLIDATION_DELAY_MS || 250);
+                    // Pass `false` to indicate this is an automatic, not manual, request
+                    TokenFX.state.fxMenuTimeout = setTimeout(() => TokenFX.utils.buildAndSendConsolidatedMenu(false), TokenFX.config.MENU_CONSOLIDATION_DELAY_MS || 250);
             } else {
-                // Legacy behavior: send one menu right away
+                    // Legacy behavior for non-consolidated menus, but only for persistent effects
             let stopButton = TokenFX.config.fxMenuTemplate.stopButton.replace("{loopID}", loopID);
             let otherCommands = "";
             if (TokenFX.config.otherScriptCommands && TokenFX.config.otherScriptCommands.length > 0) {
@@ -1098,6 +1217,7 @@ const TokenFX = {
                 `{{Loop ID=${loopID}}}` +
                 `{{Actions=${stopButton}${otherCommands ? '<br>' + otherCommands : ''}}}`;
                 sendChat("TokenFX", `/w gm ${menuMessage}`);
+                }
             }
 
             if (syncMode === "sync") {
@@ -1223,6 +1343,7 @@ const TokenFX = {
                 loopData.globalTimeouts.push(nextGlobalCycleTimeout);
             } else {
                 TokenFX.utils.log(`Loop ${loopID} (desync) finished all global repeats. Will be cleaned up.`, 'debug');
+                // The loop is not deleted here, it's deleted at the top of the function on the next theoretical call
             }
         },
         
@@ -1268,7 +1389,6 @@ const TokenFX = {
                         loopData.globalTimeouts.push(nextGlobalTimeout);
                     } else {
                         TokenFX.utils.log(`Loop ${loopID} (sync) finished all global repeats. Will be cleaned up.`, 'debug');
-                        delete TokenFX.state.activeFxLoops[loopID]; // Clean up here
                     }
                 }
             }
@@ -1829,6 +1949,14 @@ on("chat:message", function(msg) {
             sendChat("TokenFX", "/w gm Usage: !stopFxLoop [LoopID]");
         }
     }
+    else if (command === "!stopFxLoops") { // New command to stop multiple loops
+        if (args.length > 1) {
+            const loopIDs = args[1].split(',');
+            loopIDs.forEach(id => TokenFX.utils.stopFxLoop(id.trim()));
+        } else {
+            sendChat("TokenFX", "/w gm Usage: !stopFxLoops [LoopID1,LoopID2,...]");
+        }
+    }
     else if (command === "!stopAllFx" || command === "!stopMultiTokenFx") { // Keep old stop command for compatibility during transition
         TokenFX.fx.stopAllFx();
     }
@@ -1855,6 +1983,10 @@ on("chat:message", function(msg) {
         let tokenIDs = msg.selected.map(sel => `• ${sel._id}`).join('<br>');
         const menu = `&{template:default} {{name=Selected Token IDs}} {{IDs=${tokenIDs}}}`;
         sendChat("TokenFX", `/w gm ${menu}`);
+    }
+    // New command to show the active FX dashboard
+    else if (command.toLowerCase() === "!fx-list") {
+        TokenFX.utils.buildAndSendConsolidatedMenu(true); // Pass true for manual request
     }
     // New diagnostic command to find tokens with a specific tag
     else if (command === "!fx-find-tag") {
