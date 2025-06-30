@@ -146,10 +146,10 @@ const TrapSystem = {
         warnedInvalidGridPages: {}, // [NEW] To track pages already warned for invalid grid
 
         // From InteractionMenu:
-        activeInteractions: {},   // Not used heavily, but included
-        pendingChecks: {},        // For advantage/disadv checks
-        pendingChecksByChar: {},   // New: Lookup by character ID
-        displayDCForCheck: {}, // key: playerid, value: true/false
+        activeInteractions: {},     // Not used heavily, but included
+        pendingChecks: {},          // For advantage/disadv checks
+        pendingChecksByChar: {},    // New: Lookup by character ID
+        displayDCForCheck: {},      // key: playerid, value: true/false
 
         // [NEW] From MacroExport
         macroExportStates: {},               // Stores state for tokens (graphic, door/window, or pathv2)
@@ -160,8 +160,12 @@ const TrapSystem = {
         macroExportRecordOrdering: false,    // Flag for ordering listeners
 
         // State for passive perception
-        passivelyNoticedTraps: {},        // Initialized here
-        recentlyNoticedPlayerMessages: {} // { charId: [{ messageContent: string, timestamp: number }] }
+        passivelyNoticedTraps: {},          // Initialized here
+        recentlyNoticedPlayerMessages: {},  // { charId: [{ messageContent: string, timestamp: number }] }
+
+        // State for hiding detection auras
+        detectionAurasTemporarilyHidden: false,
+        hideAurasTimeout: null
     },
 
     //----------------------------------------------------------------------
@@ -790,21 +794,6 @@ const TrapSystem = {
                         : TrapSystem.config.AURA_COLORS.DISARMED;
                 }
 
-                let aura2Color = '#000000'; // Default safe color
-                let aura2Radius = '';     // Default to invisible
-
-                if (trapData.showDetectionAura) {
-                    const isDetected = trapData.detected; // Use the persistent flag
-
-                    if (isArmedAndHasUses) {
-                        aura2Radius = trapData.passiveMaxRange || 0;
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
-                    } else {
-                        aura2Radius = 0; // Visible dot
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
-                    }
-                }
-
                 token.set({
                     aura1_color: aura1Color,
                     aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
@@ -814,10 +803,7 @@ const TrapSystem = {
                     showplayers_bar1: false,
                     bar2_value: trapData.passiveSpotDC || 0,
                     bar2_max: trapData.passiveSpotDC || 0,
-                    showplayers_bar2: false,
-                    aura2_color: aura2Color,
-                    aura2_radius: aura2Radius,
-                    showplayers_aura2: false 
+                    showplayers_bar2: false
                 });
             }
 
@@ -911,29 +897,12 @@ const TrapSystem = {
                         : TrapSystem.config.AURA_COLORS.DISARMED;
                 }
 
-                const isArmedAndHasUses = finalArmedState && current > 0;
-                let aura2Color = '#000000'; // Default safe color
-                let aura2Radius = '';     // Default to invisible
-
-                if (trapData.showDetectionAura) {
-                    const isDetected = trapData.detected; // Use the persistent flag
-
-                    if (isArmedAndHasUses) {
-                        aura2Radius = trapData.passiveMaxRange || 0;
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
-                    } else {
-                        aura2Radius = 0; // Visible dot
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
-                    }
-                }
-
                 token.set({
                     aura1_color: auraColor,
-                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
-                    showplayers_aura1: false,
-                    aura2_color: aura2Color,
-                    aura2_radius: aura2Radius
+                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token)
                 });
+                // After updating uses, immediately recalculate the detection aura to ensure it's correct.
+                this.passive.updateAuraForDetectionRange(token);
 
                 this.log(`Updated trap state - Uses: ${current}/${max}, Armed: ${finalArmedState ? 'on' : 'off'} (New Format Update)`, 'info');
             } catch (err) {
@@ -1216,7 +1185,6 @@ const TrapSystem = {
                 '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
                 `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})`,
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
-                "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, Text} ?{Optional Macro 2|None} ?{Optional Macro 3|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                 '{{Trap Control=',
                 '[🔄 Toggle](!trapsystem toggle) - Toggle selected trap on/off\n',
                 '[⚡ Trigger](!trapsystem trigger) - Manually trigger selected trap\n',
@@ -1228,6 +1196,8 @@ const TrapSystem = {
                 '[❌ Disable](!trapsystem disable) - Disable triggers (does not unlock tokens)\n',
                 '[👥 Allow All](!trapsystem allowall) - Allow movement for all locked tokens\n',
                 '[🧹 Reset Detection](!trapsystem resetdetection) - Clears all passively noticed traps for all\n',
+                '[🙈 Hide Detections](!trapsystem hidedetection ?{Minutes|0}) - Hide all detection auras (0 for indefinitely)\n',
+                '[👁️ Show Detections](!trapsystem showdetection) - Show all detection auras\n',
                 '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
                 '{{Tips=',
                 '• **Macro Types**: Actions can be a Roll20 Macro (`#MacroName`), an API command (`!command` or `$command`), or plain chat text.<br>',
@@ -4143,7 +4113,12 @@ const TrapSystem = {
             // --- Define fixed template parts and default message contents ---
             const PLAYER_MSG_TEMPLATE_NAME = "⚠️ Alert!"; // Using the "Alert!" version
             const PLAYER_MSG_PREFIX = `&{template:default} {{name=${PLAYER_MSG_TEMPLATE_NAME}}} {{message=`;
-            const GM_MSG_TEMPLATE_NAME = "🎯 Passive Spot";
+            
+            // Get player's token image for GM message header
+            const playerTokenImgUrl = TrapSystem.utils.getTokenImageURL(triggeringToken, 'thumb');
+            const playerTokenImage = playerTokenImgUrl === '👤' ? '' : `<img src='${playerTokenImgUrl}' width='30' height='30' style='vertical-align: middle; margin-left: 5px;'>`;
+            const GM_MSG_TEMPLATE_NAME = `🎯 Passive Spot ${playerTokenImage}`;
+
             const GM_MSG_PREFIX = `&{template:default} {{name=${GM_MSG_TEMPLATE_NAME}}} {{message=`;
             const MSG_SUFFIX = "}}";
 
@@ -4291,6 +4266,67 @@ const TrapSystem = {
             return { finalPP, basePP, luckBonus };
         },
 
+        updateAuraForDetectionRange(trapToken) {
+            if (!trapToken || !TrapSystem.utils.isTrap(trapToken)) return;
+
+            // NEW Check for global hide
+            if (TrapSystem.state.detectionAurasTemporarilyHidden) {
+                trapToken.set({ aura2_radius: '' });
+                return;
+            }
+
+            const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+            if (!trapData) {
+                // If it's not a valid trap, ensure the aura is off.
+                trapToken.set({ aura2_radius: '', aura2_color: '#000000' });
+                return;
+            }
+
+            // AURA VISIBILITY CHECK: Only show the aura if showDetectionAura is explicitly true.
+            // If it's false or undefined, hide the aura.
+            if (trapData.showDetectionAura !== true) {
+                trapToken.set({ aura2_radius: '' }); // Setting radius to empty string hides it.
+                TrapSystem.utils.log(`Hiding detection aura for ${trapToken.id} because showDetectionAura is not explicitly true.`, 'debug');
+                return;
+            }
+            
+            // If we are here, showDetectionAura is true or undefined (defaults to true).
+            // Now determine the correct color and radius based on trap state.
+            const isArmedAndHasUses = trapData.isArmed && trapData.currentUses > 0;
+            const isDetected = trapData.detected;
+            let aura2Color = '#000000';
+            let aura2Radius = '';
+
+            if (isArmedAndHasUses) {
+                aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
+                // Calculate radius based on range
+                const pageSettings = TrapSystem.utils.getPageSettings(trapToken.get('_pageid'));
+                if (pageSettings.valid && trapData.passiveMaxRange > 0) {
+                    const pixelsPerFoot = pageSettings.gridSize / pageSettings.scale;
+                    const tokenRadiusPixels = Math.max(trapToken.get('width'), trapToken.get('height')) / 2;
+                    const tokenRadiusFt = tokenRadiusPixels / pixelsPerFoot;
+                    aura2Radius = Math.max(0, trapData.passiveMaxRange - tokenRadiusFt);
+                }
+            } else { // Disarmed or no uses
+                aura2Radius = 0; // Show a visible dot to indicate state
+                aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
+            }
+            
+            // Override color if passive detection is manually toggled off for the trap
+            if (trapData.passiveEnabled === false) {
+                aura2Color = TrapSystem.config.AURA_COLORS.PASSIVE_DISABLED;
+            }
+
+            trapToken.set({
+                aura2_color: aura2Color,
+                aura2_radius: aura2Radius
+            });
+
+            TrapSystem.utils.log(`--- Detection Aura Recalculated for ${trapToken.id} ---`);
+            TrapSystem.utils.log(`Desired Range from Center: ${trapData.passiveMaxRange || 0} ft`);
+            TrapSystem.utils.log(`Setting Aura2 Radius to: ${aura2Radius} and Color: ${aura2Color}`);
+        },
+
         showPassiveSetupMenu(trapToken, playerId, providedTrapData = null) {
             if (!trapToken) {
                 TrapSystem.utils.chat("❌ No trap token selected for passive setup.", playerId);
@@ -4396,7 +4432,7 @@ const TrapSystem = {
                 "&{template:default}",
                 `{{name=🛠️ Passive Setup: ${trapToken.get('name') || 'Unnamed Trap'}}}`,
                 `{{Current DC=${currentDC}}}`,
-                `{{Current Range=${currentRange}ft (0 for none)}}`,
+                `{{Current Range from center=${currentRange}ft (0 for none)}}`,
                 `{{Detection Aura=${currentShowAura ? 'Enabled' : 'Disabled'}}}`,
                 `{{PC Msg Content=${playerMsgPreview}}}`,
                 `{{GM Msg Content=${gmMsgPreview}}}`,
@@ -4405,7 +4441,7 @@ const TrapSystem = {
                 `{{Luck Die=${currentLuckDie}}}`,
                 "{{Actions=",
                 `[Set Trap DC](!trapsystem setpassive dc ${trapToken.id} ?{DC|${currentDC}})`,
-                `[Set Range](!trapsystem setpassive range ${trapToken.id} ?{Range ft - 0 for none|${currentRange}})`,
+                `[Set Range](!trapsystem setpassive range ${trapToken.id} ?{Range ft from Center - 0 for none|${currentRange}})`,
                 `[Set PC Msg](!trapsystem setpassive playermsg ${trapToken.id} ?{Player Message with {placeholders}|${playerMsgQueryDefault}})`,
                 `[Set GM Msg](!trapsystem setpassive gmmsg ${trapToken.id} ?{GM Message with {placeholders}|${gmMsgQueryDefault}})`,
                 `[Toggle Luck](!trapsystem setpassive luckroll ${trapToken.id} ${!currentLuckRoll})`,
@@ -4562,6 +4598,7 @@ const TrapSystem = {
                     TrapSystem.utils.log(`Successfully updated GM notes for trap ${trapId}. New notes (raw): '${newGmNotesString}'`, 'info');
                     // Re-parse to update visuals AND get the canonical data object for the menu refresh
                     const newlyParsedData = TrapSystem.utils.parseTrapNotes(encodedNewGmNotes, trapToken);
+                    TrapSystem.passive.updateAuraForDetectionRange(trapToken);
                     TrapSystem.passive.showPassiveSetupMenu(trapToken, playerId, newlyParsedData);
 
                 } catch (e) {
@@ -4724,6 +4761,52 @@ const TrapSystem = {
             } else {
                 TrapSystem.utils.chat(message); // Fallback to public chat if no playerID
             }
+        },
+        
+        hideAllAuras(durationMinutes, playerId) {
+            if (TrapSystem.state.hideAurasTimeout) {
+                clearTimeout(TrapSystem.state.hideAurasTimeout);
+                TrapSystem.state.hideAurasTimeout = null;
+            }
+
+            TrapSystem.state.detectionAurasTemporarilyHidden = true;
+
+            const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapSystem.utils.isTrap(t));
+            allTraps.forEach(trapToken => {
+                TrapSystem.passive.updateAuraForDetectionRange(trapToken);
+            });
+
+            let message = "👁️ All detection auras are now hidden.";
+            
+            const durationMs = parseFloat(durationMinutes) * 60 * 1000;
+            if (!isNaN(durationMs) && durationMs > 0) {
+                TrapSystem.state.hideAurasTimeout = setTimeout(() => {
+                    this.showAllAuras(playerId, true);
+                }, durationMs);
+                message += ` They will automatically reappear in ${durationMinutes} minute(s).`;
+            }
+
+            TrapSystem.utils.whisper(playerId, message);
+        },
+
+        showAllAuras(playerId, isAuto = false) {
+            if (TrapSystem.state.hideAurasTimeout) {
+                clearTimeout(TrapSystem.state.hideAurasTimeout);
+                TrapSystem.state.hideAurasTimeout = null;
+            }
+
+            TrapSystem.state.detectionAurasTemporarilyHidden = false;
+
+            const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapSystem.utils.isTrap(t));
+            allTraps.forEach(trapToken => {
+                TrapSystem.passive.updateAuraForDetectionRange(trapToken);
+            });
+            
+            const message = isAuto 
+                ? "⏰ Timer expired. All detection auras have been restored."
+                : "👁️ All detection auras are now restored.";
+
+            TrapSystem.utils.whisper(playerId, message);
         }
     }
 };
@@ -4802,6 +4885,7 @@ on("change:graphic", async (obj, prev) => {
                 // If it IS a trap (either new or modified), parse its notes to set the correct visuals.
                 // We pass the RAW notes to parseTrapNotes, as it has its own decoding logic.
                 TrapSystem.utils.parseTrapNotes(currentNotesRaw, obj);
+                TrapSystem.passive.updateAuraForDetectionRange(obj); // Recalculate aura on notes change
             }
         }
         
@@ -4813,6 +4897,7 @@ on("change:graphic", async (obj, prev) => {
             if (sizeChanged) {
                 // If trap was resized, its aura might need to be recalculated.
                 obj.set({ aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(obj) });
+                TrapSystem.passive.updateAuraForDetectionRange(obj); // Recalculate detection aura on resize
             }
 
             if ((sizeChanged || positionOrRotationChanged) && Object.values(TrapSystem.state.lockedTokens).some(lock => lock.trapToken === obj.id)) {
@@ -5010,7 +5095,7 @@ on("chat:message",(msg) => {
 
         // Whitelist 'interact' as it gets the trap token ID from arguments.
         // Sub-actions within 'interact' will handle specific token needs (e.g., a triggering character for a skill check).
-        if (!selectedToken && !["enable", "disable", "toggle", "status", "help", "allowall", "exportmacros", "resetstates", "resetmacros", "fullreset", "allowmovement", "resetdetection", "interact"].includes(action.toLowerCase())) {
+        if (!selectedToken && !["enable", "disable", "toggle", "status", "help", "allowall", "exportmacros", "resetstates", "resetmacros", "fullreset", "allowmovement", "resetdetection", "interact", "hidedetection", "showdetection"].includes(action.toLowerCase())) {
             TrapSystem.utils.chat('❌ Error: No token selected for this action!');
             TrapSystem.utils.log(`[API Handler] Action '${action}' requires a selected token, but none was found.`, 'warn');
                 return;
@@ -5258,8 +5343,8 @@ on("chat:message",(msg) => {
             case "customcheck":
                 if (args.length < 7) { // e.g., !trapsystem customcheck TRAPID PLAYERID TOKENID Skill Name 10
                     TrapSystem.utils.chat("❌ Missing parameters for customcheck command! Requires at least skill and DC.");
-                    return;
-                }
+                return;
+            }
                 {
                     const cToken = getObj("graphic", args[2]);
                     if (!cToken) {
@@ -5443,6 +5528,14 @@ on("chat:message",(msg) => {
                 break;
             case 'resetdetection':
                 TrapSystem.commands.handleResetDetection(selectedToken, msg.playerid);
+                break;
+            case "hidedetection": { // <-- ADD THIS BLOCK
+                const duration = args[2] || 0; // If no duration, it hides indefinitely until 'show' is called
+                TrapSystem.commands.hideAllAuras(duration, msg.playerid);
+                break;
+            }
+            case "showdetection": // <-- AND ADD THIS BLOCK
+                TrapSystem.commands.showAllAuras(msg.playerid);
                 break;
             case "rearm": {
                 const tid = args[2];
