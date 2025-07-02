@@ -902,7 +902,7 @@ const TrapSystem = {
                     aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token)
                 });
                 // After updating uses, immediately recalculate the detection aura to ensure it's correct.
-                this.passive.updateAuraForDetectionRange(token);
+                TrapSystem.passive.updateAuraForDetectionRange(token);
 
                 this.log(`Updated trap state - Uses: ${current}/${max}, Armed: ${finalArmedState ? 'on' : 'off'} (New Format Update)`, 'info');
             } catch (err) {
@@ -1182,8 +1182,8 @@ const TrapSystem = {
                 '{{name=🎯 Trap System Help}}',
                 '{{About=The Trap System allows you to create and manage traps, skill checks, and interactions. Traps can be triggered by movement or manually.}}',
                 '{{Setup Traps=',
-                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
-                `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})`,
+                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
+                `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})`,
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
                 '{{Trap Control=',
                 '[🔄 Toggle](!trapsystem toggle) - Toggle selected trap on/off\n',
@@ -1200,12 +1200,13 @@ const TrapSystem = {
                 '[👁️ Show Detections](!trapsystem showdetection) - Show all detection auras\n',
                 '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
                 '{{Tips=',
-                '• **Macro Types**: Actions can be a Roll20 Macro (`#MacroName`), an API command (`!command` or `$command`), or plain chat text.<br>',
-                '• **Use Quotes!**: When using `setup` commands, any action with spaces MUST be wrapped in double quotes. Example: `"!token-mod --set status_dead"` or `"This is a trap message"`.<br>',
-                '• **Placeholders**: Use `<&trap>` for the trap token and `<&trapped>` for the token that triggered it. `@TOKENID@` can also be used as a shortcut for the trap token.<br>',
-                '• **Token Selection**: Most commands require a trap token to be selected first.<br>',
-                '• **Interaction Traps**: You can disable movement triggers on interaction traps to make them manually activated only.<br>',
-                '• **Skill Checks**: Interaction traps support advantage/disadvantage.}}'
+                '• <b style="color:#f04747;">Macro Types:</b> Actions can be a Roll20 Macro <span style="color:#ffcb05">#MacroName</span>, an API command <span style="color:#ffcb05">"!command"</span>, or plain chat <span style="color:#ffcb05">"text message"</span>.<br>',
+                '• <b style="color:#f04747;">Workarounds:</b> To use API commands or templates in setup, you MUST disguise them. Use <span style="color:#ffcb05">$</span> for commands e.g., <span style="color:#ffcb05">"$deal-damage"</span> and <span style="color:#ffcb05">^</span> for templates e.g., <span style="color:#ffcb05">"^｛template:default｝..."</span>.<br>',
+                '• <b style="color:#f04747;">Use Quotes!:</b> When using setup commands, any action with spaces MUST be wrapped in <span style="color:#ffcb05">"double quotes"</span>.<br>',
+                '• <b style="color:#f04747;">Placeholders:</b> Use <span style="color:#ffcb05">&lt;&trap&gt;</span> for the trap token and <span style="color:#ffcb05">&lt;&trapped&gt;</span> for the token that triggered it.<br>',
+                '• <b style="color:#f04747;">Token Selection:</b> Most commands require a trap token to be selected first.<br>',
+                '• <b style="color:#f04747;">Interaction Traps:</b> You can disable movement triggers on interaction traps to make them manually activated only.<br>',
+                '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps support advantage/disadvantage.}}'
             ].join(' ');
             sendChat(target, `/w GM ${helpMenu}`);
         },
@@ -1215,7 +1216,12 @@ const TrapSystem = {
             if (!trapToken) return;
             const trapName = trapToken.get("name") || "Unnamed Trap";
             const trapId = trapToken.id;
-            const menu = `&{template:default} {{name=🔴 Trap Depleted}} {{message=${trapName} has been depleted and auto-disarmed.}} {{action=[⚙️ Re-arm](!trapsystem rearm ${trapId})}}`;
+            const menu = [
+                '&{template:default}',
+                `{{name=🔴 Trap Depleted}}`,
+                `{{message=${trapName} has been depleted and auto-disarmed.}}`,
+                `{{action=[⚙️ Re-arm](!trapsystem rearm ${trapId})}}`
+            ].join(' ');
             this.chat(menu);
         },
 
@@ -1732,6 +1738,49 @@ const TrapSystem = {
             return newGmNotes.trim();
         },
 
+        getSafeMacroDisplayName(macroString, maxLength = 25) {
+            if (!macroString || typeof macroString !== 'string') return "(DE)";
+
+            let displayName = macroString.trim();
+
+            // 1. Handle Roll20 Macros
+            if (displayName.startsWith('#')) {
+                return `Macro: ${displayName.substring(1)}`;
+            }
+
+            // 2. Handle API Commands (strip quotes if they exist from setup)
+            if (displayName.startsWith('"') && displayName.endsWith('"')) {
+                displayName = displayName.substring(1, displayName.length - 1);
+            }
+            if (displayName.startsWith('!')) {
+                displayName = `Cmd: ${displayName}`;
+            } else if (displayName.startsWith('$')) {
+                 displayName = `Cmd: !${displayName.substring(1)}`;
+            }
+
+            // 3. Handle Roll Templates
+            else if (displayName.startsWith('&{template:')) {
+                const nameMatch = displayName.match(/\{\{name=([^}]+)\}\}/);
+                if (nameMatch && nameMatch[1]) {
+                    displayName = `Template: "${nameMatch[1].trim()}"`;
+                } else {
+                    displayName = "Chat Template";
+                }
+            }
+
+            // 4. Handle Plain Text (if it wasn't caught above)
+            else {
+                 displayName = `Text: "${displayName}"`;
+            }
+
+            // 5. Truncate if necessary
+            if (displayName.length > maxLength) {
+                return displayName.substring(0, maxLength - 3) + "...";
+            }
+            
+            return displayName;
+        },
+
         // Helper to parse and roll a luck die
         parseAndRollLuckDie(dieString) {
             if (!dieString) {
@@ -2166,7 +2215,7 @@ const TrapSystem = {
             if (data.autoTrigger) {
                 if (data.primaryMacro && data.primaryMacro.macro) {
                     // Use the new centralized helper function
-                    const success = TrapSystem.triggers.markTriggered(triggeredToken.id, trapToken.id, data.primaryMacro.macro);
+                    const success = TrapSystem.triggers.markTriggered(triggeredToken.id, trapToken.id, 'primary');
                     if (success) {
                         TrapSystem.triggers.getTrapStatus(trapToken);
                         wasAutoTriggeredAndHasMacro = true;
@@ -2216,13 +2265,13 @@ const TrapSystem = {
 
                 let triggerOptionsString = "";
                 if (data.primaryMacro && data.primaryMacro.macro) {
-                    triggerOptionsString += `[🎯 ${data.primaryMacro.name || data.primaryMacro.macro}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${data.primaryMacro.macro})`;
+                    triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(data.primaryMacro.macro)}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} primary)`;
                 }
 
                 if(data.options && data.options.length) {
-                    data.options.forEach(o => {
+                    data.options.forEach((o, index) => {
                         if (triggerOptionsString) triggerOptionsString += ' ';
-                        triggerOptionsString += `[🎯 ${o.name}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${o.macro})`;
+                        triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(o.macro)}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} option ${index})`;
                     });
                 }
 
@@ -2347,21 +2396,35 @@ const TrapSystem = {
             });
         },
 
-        markTriggered(tokenId, trapId, macroName) {
+        markTriggered(tokenId, trapId, macroIdentifier) {
             // [UPDATED: Now also executes the macro immediately]
             if(TrapSystem.state.lockedTokens[tokenId]) {
                 TrapSystem.state.lockedTokens[tokenId].macroTriggered = true;
                 TrapSystem.utils.log(`Macro triggered for token ${tokenId}`, 'info');
-                if (macroName) {
+                if (macroIdentifier) {
                     const trapTokenObj = getObj("graphic", trapId);
                     const trappedTokenObj = getObj("graphic", tokenId);
                     const tagToIdMap = TrapSystem.utils.buildTagToIdMap(trapTokenObj, trappedTokenObj);
-                    const result = TrapSystem.utils.executeMacro(macroName, tagToIdMap);
-                    if (!result) {
-                        TrapSystem.utils.chat(`❌ Failed to execute macro: ${macroName}`);
+                    const trapData = TrapSystem.utils.parseTrapNotes(trapTokenObj.get("gmnotes"), trapTokenObj);
+                    let macroToExecute = null;
+                    if (macroIdentifier === 'primary') {
+                        macroToExecute = trapData.primaryMacro.macro;
+                    } else if (macroIdentifier.startsWith('option')) {
+                        const optionIndex = parseInt(macroIdentifier.split(' ')[1]);
+                        if (trapData.options && trapData.options[optionIndex]) {
+                            macroToExecute = trapData.options[optionIndex].macro;
+                        }
+                    }
+                    if (macroToExecute) {
+                        const result = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
+                        if (!result) {
+                            TrapSystem.utils.chat(`❌ Failed to execute macro: ${macroToExecute}`);
+                        }
+                    } else {
+                        TrapSystem.utils.chat(`❌ Invalid macro identifier: ${macroIdentifier}`);
                     }
                 } else {
-                    TrapSystem.utils.chat('❌ No macro name provided to markTriggered.');
+                    TrapSystem.utils.chat('❌ No macro identifier provided to markTriggered.');
                 }
             } else {
                 TrapSystem.utils.log(`No locked token found for ${tokenId} in markTriggered`, 'warning');
@@ -2383,30 +2446,30 @@ const TrapSystem = {
 
             let msg = [
                 '&{template:default} {{name=Trap Status}}',
-                `{{State=${data.isArmed ? "🎯 ARMED" : "🔴 DISARMED"}}}`, // Corrected string interpolation
-                `{{Uses=${data.currentUses}/${data.maxUses}}}` // Corrected string interpolation
+                `{{State=${data.isArmed ? "🎯 ARMED" : "🔴 DISARMED"}}}`,
+                `{{Uses=${data.currentUses}/${data.maxUses}}}`
             ];
 
             if (data.type === "interaction") {
-                if (data.primaryMacro && data.primaryMacro.name) {
-                    msg.push(`{{Primary Macro=${data.primaryMacro.name || data.primaryMacro.macro}}}`);
+                if (data.primaryMacro && data.primaryMacro.macro) {
+                    msg.push(`{{Primary Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.primaryMacro.macro)}}}`);
                 }
                 if (data.successMacro) {
-                    msg.push(`{{Success Macro=${data.successMacro}}}`);
+                    msg.push(`{{Success Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.successMacro)}}}`);
                 }
                 if (data.failureMacro) {
-                    msg.push(`{{Failure Macro=${data.failureMacro}}}`);
+                    msg.push(`{{Failure Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.failureMacro)}}}`);
                 }
                 if (data.checks && data.checks.length > 0) {
                     const checkInfo = data.checks.map(c => `${TrapSystem.config.SKILL_TYPES[c.type] || "🎲"} ${c.type} (DC ${c.dc})`).join('<br>');
                     msg.push(`{{Checks=${checkInfo}}}`);
                 }
             } else { // Standard trap
-                if (data.primaryMacro && data.primaryMacro.name) {
-                    msg.push(`{{Primary Macro=${data.primaryMacro.name || data.primaryMacro.macro}}}`);
+                if (data.primaryMacro && data.primaryMacro.macro) {
+                    msg.push(`{{Primary Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.primaryMacro.macro)}}}`);
                 }
                 if (Array.isArray(data.options) && data.options.length) {
-                    const optionsList = data.options.map((opt, index) => `${index + 1}. ${opt.name}`).join('<br>');
+                    const optionsList = data.options.map((opt, index) => `${index + 1}. ${TrapSystem.utils.getSafeMacroDisplayName(opt.macro)}`).join('<br>');
                 msg.push(`{{Options=${optionsList}}}`);
             }
             }
@@ -2507,14 +2570,14 @@ const TrapSystem = {
                 controlPanel.push(`{{After Trigger=${trapData.currentUses > 1 ? "🎯 ARMED" : "🔴 AUTO-DISARMED"} Uses: ${trapData.currentUses - 1}/${trapData.maxUses}}}`);
                 
                 let triggerOptionsString = "";
-                if (trapData.primaryMacro && trapData.primaryMacro.name && trapData.primaryMacro.macro) {
-                    triggerOptionsString += `[🎯 ${trapData.primaryMacro.name}](!trapsystem manualtrigger ${trapToken.id} ${trapData.primaryMacro.macro})`;
+                if (trapData.primaryMacro && trapData.primaryMacro.macro) {
+                    triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(trapData.primaryMacro.macro)}](!trapsystem manualtrigger ${trapToken.id} primary)`;
                 }
 
                 if (trapData.options && trapData.options.length > 0) {
-                    trapData.options.forEach(option => {
+                    trapData.options.forEach((option, index) => {
                         if (triggerOptionsString !== "") triggerOptionsString += " "; // Add a space separator if primary was added
-                        triggerOptionsString += `[🎯 ${option.name}](!trapsystem manualtrigger ${trapToken.id} ${option.macro})`;
+                        triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(option.macro)}](!trapsystem manualtrigger ${trapToken.id} option ${index})`;
                     });
                 }
 
@@ -2561,10 +2624,19 @@ const TrapSystem = {
 
                 let content = macroCmd.trim();
 
+                // NEW: Handle disguised templates like ^{template:...}
+                if (content.startsWith('^')) {
+                    // Replace the caret with an ampersand to make it a valid template.
+                    content = '&' + content.substring(1);
+                }
+
                 if (content.startsWith('"') && content.endsWith('"')) {
                     content = content.substring(1, content.length - 1).trim();
                 }
 
+                if (content.startsWith('&{')) { // This is a roll template
+                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
                 }
@@ -2581,7 +2653,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content}"`;
+                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
             };
 
             const primaryMacroProcessed = processMacro(mainMacro);
@@ -2693,6 +2765,12 @@ const TrapSystem = {
                 }
 
                 let content = macroCmd.trim();
+
+                // NEW: Handle disguised templates like ^{template:...}
+                if (content.startsWith('^')) {
+                    // Replace the caret with an ampersand to make it a valid template.
+                    content = '&' + content.substring(1);
+                }
 
                 if (content.startsWith('"') && content.endsWith('"')) {
                     content = content.substring(1, content.length - 1).trim();
@@ -2853,7 +2931,7 @@ const TrapSystem = {
             }
         },
 
-        manualMacroTrigger(trapId, macroName) {
+        manualMacroTrigger(trapId, macroIdentifier) {
             const trapToken = getObj("graphic", trapId);
             if (!trapToken) {
                 TrapSystem.utils.chat('❌ Error: Trap token not found!');
@@ -2866,35 +2944,48 @@ const TrapSystem = {
             }
 
             const tagToIdMap = TrapSystem.utils.buildTagToIdMap(trapToken, null, null);
-            const macroExecuted = TrapSystem.utils.executeMacro(macroName, tagToIdMap);
-            if (macroExecuted) {
-                const newUses = trapData.currentUses - 1;
-                const stillArmed = newUses > 0;
-                TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
-                if (!stillArmed) {
-                    TrapSystem.utils.sendDepletedMessage(trapToken);
+            let macroToExecute = null;
+            if (macroIdentifier === 'primary') {
+                macroToExecute = trapData.primaryMacro.macro;
+            } else if (macroIdentifier.startsWith('option')) {
+                const optionIndex = parseInt(macroIdentifier.split(' ')[1]);
+                if (trapData.options && trapData.options[optionIndex]) {
+                    macroToExecute = trapData.options[optionIndex].macro;
                 }
-
-                // Determine correct aura color based on trap type
-                const isInteraction = trapData.type === 'interaction';
-                let auraColor;
-                if (stillArmed) {
-                    if (TrapSystem.state.triggersEnabled) {
-                        auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED;
-                    } else {
-                        auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+            }
+            if (macroToExecute) {
+                const macroExecuted = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
+                if (macroExecuted) {
+                    const newUses = trapData.currentUses - 1;
+                    const stillArmed = newUses > 0;
+                    TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
+                    if (!stillArmed) {
+                        TrapSystem.utils.sendDepletedMessage(trapToken);
                     }
-                } else {
-                    auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION : TrapSystem.config.AURA_COLORS.DISARMED;
-                }
 
-                trapToken.set({
-                    aura1_color: auraColor,
-                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
-                    showplayers_aura1: false
-                });
+                    // Determine correct aura color based on trap type
+                    const isInteraction = trapData.type === 'interaction';
+                    let auraColor;
+                    if (stillArmed) {
+                        if (TrapSystem.state.triggersEnabled) {
+                            auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED;
+                        } else {
+                            auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+                        }
+                    } else {
+                        auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION : TrapSystem.config.AURA_COLORS.DISARMED;
+                    }
+
+                    trapToken.set({
+                        aura1_color: auraColor,
+                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
+                        showplayers_aura1: false
+                    });
+                } else {
+                    TrapSystem.utils.chat('❌ Failed to execute the macro.');
+                }
             } else {
-                TrapSystem.utils.chat('❌ Failed to execute the macro.');
+                TrapSystem.utils.chat(`❌ Invalid macro identifier: ${macroIdentifier}`);
             }
         }
     },
@@ -2981,7 +3072,7 @@ const TrapSystem = {
                         if (trappedToken) {
                             // If a token is already associated, use markTriggered. This executes the macro
                             // and sets the flag for later use-depletion, but does NOT deplete the use now.
-                            TrapSystem.triggers.markTriggered(trappedToken.id, token.id, config.primaryMacro.macro);
+                            TrapSystem.triggers.markTriggered(trappedToken.id, token.id, 'primary');
                         } else {
                             // If it's a purely manual trigger with no token yet, just execute the primary macro.
                             // The macro runs, but no use is depleted yet. The GM will select a token
@@ -5221,15 +5312,15 @@ on("chat:message",(msg) => {
                 // and then join everything after that to reassemble the macro name.
                 const parts = msg.content.split(' ');
                 if (parts.length < 5) {
-                    TrapSystem.utils.chat('❌ marktriggered: Missing tokenId, trapId, or macroName!');
+                    TrapSystem.utils.chat('❌ marktriggered: Missing tokenId, trapId, or identifier!');
                     break;
                 }
                 const tokenId = parts[2];
                 const trapId = parts[3];
-                const macroName = parts.slice(4).join(' '); // Re-assembles multi-word macros
-                TrapSystem.triggers.markTriggered(tokenId, trapId, macroName);
+                const macroIdentifier = parts.slice(4).join(' '); // e.g., "primary" or "option 0"
+                TrapSystem.triggers.markTriggered(tokenId, trapId, macroIdentifier);
                 break;
-                }
+            }
             case "enable":
                 TrapSystem.triggers.enableTriggers();
                 break;
@@ -5425,13 +5516,17 @@ on("chat:message",(msg) => {
                     TrapSystem.menu.handleFailAction(failToken, args[3], args[4]);
                 }
                 break;
-            case "manualtrigger":
-                if(args.length < 4) {
+            case "manualtrigger": {
+                const parts = msg.content.split(' ');
+                if (parts.length < 4) {
                     TrapSystem.utils.chat("❌ Missing parameters for manualtrigger!");
                     return;
                 }
-                TrapSystem.triggers.manualMacroTrigger(args[2], args[3]);
+                const trapId = parts[2];
+                const macroIdentifier = parts.slice(3).join(' '); // e.g., "primary" or "option 0"
+                TrapSystem.triggers.manualMacroTrigger(trapId, macroIdentifier);
                 break;
+            }
             case "displaydc":
                 // args: !trapsystem displaydc trapToken.id checkIndex playerid
                 if (args.length < 5) {
