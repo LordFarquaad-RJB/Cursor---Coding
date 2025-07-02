@@ -35,6 +35,39 @@ const CommandMenu = {
             'TrapMigrator': { version: 'v5.0.0' },
             'DataExporter': { version: 'v1.0.0' }
         },
+        trapSystemSkillList: [
+            "Flat Roll", 
+            "Acrobatics", 
+            "Animal Handling", 
+            "Arcana", 
+            "Athletics", 
+            "Deception", 
+            "History", 
+            "Insight", 
+            "Intimidation", 
+            "Investigation", 
+            "Medicine", 
+            "Nature", 
+            "Perception", 
+            "Performance", 
+            "Persuasion", 
+            "Religion", 
+            "Sleight of Hand", 
+            "Stealth", 
+            "Survival", 
+            "Strength Check", 
+            "Dexterity Check", 
+            "Constitution Check", 
+            "Intelligence Check", 
+            "Wisdom Check", 
+            "Charisma Check", 
+            "Strength Saving Throw", 
+            "Dexterity Saving Throw", 
+            "Constitution Saving Throw", 
+            "Intelligence Saving Throw", 
+            "Wisdom Saving Throw", 
+            "Charisma Saving Throw"
+        ],
     },
 
     // State tracking
@@ -228,9 +261,10 @@ const CommandMenu = {
                            "}}";
                 
                 case CommandMenu.config.MENU_SECTIONS.TRAP:
+                const skillListQuery = CommandMenu.config.trapSystemSkillList.join('|');
                     return "{{Trap Controls=[" +
-                           "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
-                           "[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
+                           "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
+                           `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})` +
                            "[🛠️ Setup Detection](!trapsystem passivemenu)" +
                            "[👁️ Set Detection Aura](!trapsystem setpassive showaura &#64;{selected|token_id} ?{Aura State?|On,true|Off,false})" +
                            "[🙉 Hide Detections](!trapsystem hidedetection ?{Minutes - 0 for indefinitely|0})" +
@@ -254,7 +288,7 @@ const CommandMenu = {
 
                 case CommandMenu.config.MENU_SECTIONS.TOKEN_FX:
                     return "{{Token Effects (TokenFX)=[" +
-                           "[📊 Show Active FX](!fx-list)" +
+                           "📊 Show Active FX](!fx-list)" +
                            "[📋 List Standard FX](!listStandardFx)" +
                            "[📋 List Custom FX](!listCustomFx)" +
                            "[🔍 Find by Tag](!fx-find-tag ?{Tag to find - no brackets})" +
