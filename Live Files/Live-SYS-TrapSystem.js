@@ -1,7 +1,7 @@
 /**
  * TrapSystem.js
  * 
- * A cleaned-up version of the unified Trap & Interaction system for the Roll20 API.
+ * A Trap & Interaction system for the Roll20 API.
  * 
  * This script manages trap detection, trigger systems, and an interaction menu. It supports:
  * - Precise grid-based movement and positioning.
@@ -10,8 +10,6 @@
  * - A robust interaction menu system, allowing for success/failure macros.
  * - Support for advantage/disadvantage skill checks and further expansions.
  *
- * Note: The structure & many method signatures remain intact (to preserve Roll20 compatibility),
- * but extraneous logs and truly unused code have been removed or consolidated.
  */
 
 // ---------------------------------------------------
@@ -23,6 +21,7 @@ const TrapSystem = {
     //----------------------------------------------------------------------
     // 1) CONFIG & STATE
     //----------------------------------------------------------------------
+    
     config: {
         DEBUG: false, 
         DEFAULT_GRID_SIZE: 70,
@@ -147,10 +146,10 @@ const TrapSystem = {
         warnedInvalidGridPages: {}, // [NEW] To track pages already warned for invalid grid
 
         // From InteractionMenu:
-        activeInteractions: {},   // Not used heavily, but included
-        pendingChecks: {},        // For advantage/disadv checks
-        pendingChecksByChar: {},   // New: Lookup by character ID
-        displayDCForCheck: {}, // key: playerid, value: true/false
+        activeInteractions: {},     // Not used heavily, but included
+        pendingChecks: {},          // For advantage/disadv checks
+        pendingChecksByChar: {},    // New: Lookup by character ID
+        displayDCForCheck: {},      // key: playerid, value: true/false
 
         // [NEW] From MacroExport
         macroExportStates: {},               // Stores state for tokens (graphic, door/window, or pathv2)
@@ -161,8 +160,12 @@ const TrapSystem = {
         macroExportRecordOrdering: false,    // Flag for ordering listeners
 
         // State for passive perception
-        passivelyNoticedTraps: {},        // Initialized here
-        recentlyNoticedPlayerMessages: {} // { charId: [{ messageContent: string, timestamp: number }] }
+        passivelyNoticedTraps: {},          // Initialized here
+        recentlyNoticedPlayerMessages: {},  // { charId: [{ messageContent: string, timestamp: number }] }
+
+        // State for hiding detection auras
+        detectionAurasTemporarilyHidden: false,
+        hideAurasTimeout: null
     },
 
     //----------------------------------------------------------------------
@@ -750,16 +753,10 @@ const TrapSystem = {
 
             // If NEITHER modern block was successfully parsed, THEN try legacy or return null.
             if (!triggerBlockSuccessfullyParsed && !detectionBlockSuccessfullyParsed) {
-                this.log('Neither modern traptrigger nor trapdetection block found. Trying legacy.', 'debug');
-                const legacyData = this.parseLegacyTrapNotes(decodedNotes, token);
-                if (legacyData) {
-                    // TODO: Consider if aura/bar sync is needed for legacy data here, or if parseLegacyTrapNotes handles it.
-                    // For now, assume parseLegacyTrapNotes would handle its own visual sync if it returns data.
-                    return legacyData; 
-                }
+                this.log('Neither modern traptrigger nor trapdetection block found. Returning null.', 'debug');
                 // If legacy also returns null, it means the notes are not a trap in any known format.
                 if (decodedNotes.trim() !== "" && decodedNotes.trim().replace(/<br\s*\/?>/gi, "") !== "") {
-                     this.log('Notes present but not a recognized trap format (modern or legacy). Returning null.', 'debug');
+                     this.log('Notes present but not a recognized trap format. Returning null.', 'debug');
                 }
                 return null; 
             }
@@ -797,21 +794,6 @@ const TrapSystem = {
                         : TrapSystem.config.AURA_COLORS.DISARMED;
                 }
 
-                let aura2Color = '#000000'; // Default safe color
-                let aura2Radius = '';     // Default to invisible
-
-                if (trapData.showDetectionAura) {
-                    const isDetected = trapData.detected; // Use the persistent flag
-
-                    if (isArmedAndHasUses) {
-                        aura2Radius = trapData.passiveMaxRange || 0;
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
-                    } else {
-                        aura2Radius = 0; // Visible dot
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
-                    }
-                }
-
                 token.set({
                     aura1_color: aura1Color,
                     aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
@@ -821,10 +803,7 @@ const TrapSystem = {
                     showplayers_bar1: false,
                     bar2_value: trapData.passiveSpotDC || 0,
                     bar2_max: trapData.passiveSpotDC || 0,
-                    showplayers_bar2: false,
-                    aura2_color: aura2Color,
-                    aura2_radius: aura2Radius,
-                    showplayers_aura2: false 
+                    showplayers_bar2: false
                 });
             }
 
@@ -918,29 +897,12 @@ const TrapSystem = {
                         : TrapSystem.config.AURA_COLORS.DISARMED;
                 }
 
-                const isArmedAndHasUses = finalArmedState && current > 0;
-                let aura2Color = '#000000'; // Default safe color
-                let aura2Radius = '';     // Default to invisible
-
-                if (trapData.showDetectionAura) {
-                    const isDetected = trapData.detected; // Use the persistent flag
-
-                    if (isArmedAndHasUses) {
-                        aura2Radius = trapData.passiveMaxRange || 0;
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
-                    } else {
-                        aura2Radius = 0; // Visible dot
-                        aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
-                    }
-                }
-
                 token.set({
                     aura1_color: auraColor,
-                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token),
-                    showplayers_aura1: false,
-                    aura2_color: aura2Color,
-                    aura2_radius: aura2Radius
+                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(token)
                 });
+                // After updating uses, immediately recalculate the detection aura to ensure it's correct.
+                TrapSystem.passive.updateAuraForDetectionRange(token);
 
                 this.log(`Updated trap state - Uses: ${current}/${max}, Armed: ${finalArmedState ? 'on' : 'off'} (New Format Update)`, 'info');
             } catch (err) {
@@ -1214,15 +1176,15 @@ const TrapSystem = {
         },
 
         showHelpMenu: function(target = 'API') {
+            const skillListForQuery = Object.keys(TrapSystem.config.SKILL_TYPES).join('|');
             const helpMenu = [
                 '&{template:default}',
                 '{{name=🎯 Trap System Help}}',
                 '{{About=The Trap System allows you to create and manage traps, skill checks, and interactions. Traps can be triggered by movement or manually.}}',
                 '{{Setup Traps=',
-                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
-                '[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{First Check DC|10} ?{Second Check Type|None|Flat Roll|Acrobatics|Animal Handling|Arcana|Athletics|Deception|History|Insight|Intimidation|Investigation|Medicine|Nature|Perception|Performance|Persuasion|Religion|Sleight of Hand|Stealth|Survival|Strength Check|Dexterity Check|Constitution Check|Intelligence Check|Wisdom Check|Charisma Check|Strength Saving Throw|Dexterity Saving Throw|Constitution Saving Throw|Intelligence Saving Throw|Wisdom Saving Throw|Charisma Saving Throw} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
+                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
+                `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})`,
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
-                "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!Command&quot;, Text} ?{Optional Macro 2|None} ?{Optional Macro 3|None} ?{Movement|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
                 '{{Trap Control=',
                 '[🔄 Toggle](!trapsystem toggle) - Toggle selected trap on/off\n',
                 '[⚡ Trigger](!trapsystem trigger) - Manually trigger selected trap\n',
@@ -1234,14 +1196,17 @@ const TrapSystem = {
                 '[❌ Disable](!trapsystem disable) - Disable triggers (does not unlock tokens)\n',
                 '[👥 Allow All](!trapsystem allowall) - Allow movement for all locked tokens\n',
                 '[🧹 Reset Detection](!trapsystem resetdetection) - Clears all passively noticed traps for all\n',
+                '[🙈 Hide Detections](!trapsystem hidedetection ?{Minutes - 0 for indefinitely|0}) - Hide all detection auras (0 = indefinitely)\n',
+                '[👁️ Show Detections](!trapsystem showdetection) - Show all detection auras\n',
                 '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
                 '{{Tips=',
-                '• **Macro Types**: Actions can be a Roll20 Macro (`#MacroName`), an API command (`!command` or `$command`), or plain chat text.<br>',
-                '• **Use Quotes!**: When using `setup` commands, any action with spaces MUST be wrapped in double quotes. Example: `"!token-mod --set status_dead"` or `"This is a trap message"`.<br>',
-                '• **Placeholders**: Use `<&trap>` for the trap token and `<&trapped>` for the token that triggered it. `@TOKENID@` can also be used as a shortcut for the trap token.<br>',
-                '• **Token Selection**: Most commands require a trap token to be selected first.<br>',
-                '• **Interaction Traps**: You can disable movement triggers on interaction traps to make them manually activated only.<br>',
-                '• **Skill Checks**: Interaction traps support advantage/disadvantage.}}'
+                '• <b style="color:#f04747;">Macro Types:</b> Actions can be a Roll20 Macro <span style="color:#ffcb05">#MacroName</span>, an API command <span style="color:#ffcb05">"!command"</span>, or plain chat <span style="color:#ffcb05">"text message"</span>.<br>',
+                '• <b style="color:#f04747;">Workarounds:</b> To use API commands or templates in setup, you MUST disguise them. Use <span style="color:#ffcb05">$</span> for commands e.g., <span style="color:#ffcb05">"$deal-damage"</span> and <span style="color:#ffcb05">^</span> for templates e.g., <span style="color:#ffcb05">"^｛template:default｝..."</span>.<br>',
+                '• <b style="color:#f04747;">Use Quotes!:</b> When using setup commands, any Text, Template or Command with spaces MUST be wrapped in <span style="color:#ffcb05">"double quotes"</span>.<br>',
+                '• <b style="color:#f04747;">Placeholders:</b> Use <span style="color:#ffcb05">&lt;&trap&gt;</span> for the trap token and <span style="color:#ffcb05">&lt;&trapped&gt;</span> for the token that triggered it.<br>',
+                '• <b style="color:#f04747;">Token Selection:</b> Most commands require a trap token to be selected first.<br>',
+                '• <b style="color:#f04747;">Interaction Traps:</b> You can disable movement triggers on interaction traps to make them manually activated only.<br>',
+                '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps accept advantage/disadvantage.}}'
             ].join(' ');
             sendChat(target, `/w GM ${helpMenu}`);
         },
@@ -1251,7 +1216,12 @@ const TrapSystem = {
             if (!trapToken) return;
             const trapName = trapToken.get("name") || "Unnamed Trap";
             const trapId = trapToken.id;
-            const menu = `&{template:default} {{name=🔴 Trap Depleted}} {{message=${trapName} has been depleted and auto-disarmed.}} {{action=[⚙️ Re-arm](!trapsystem rearm ${trapId})}}`;
+            const menu = [
+                '&{template:default}',
+                `{{name=🔴 Trap Depleted}}`,
+                `{{message=${trapName} has been depleted and auto-disarmed.}}`,
+                `{{action=[⚙️ Re-arm](!trapsystem rearm ${trapId})}}`
+            ].join(' ');
             this.chat(menu);
         },
 
@@ -1531,17 +1501,6 @@ const TrapSystem = {
             return radiusToSetInPageUnits;
         },
 
-        // [NEW] Legacy parser, to be called if new format isn't found
-        parseLegacyTrapNotes(decodedNotes, token) {
-            this.log('Attempting to parse with legacy logic.', 'debug');
-            // ... (Original parseTrapNotes logic for the multi-line key: value format would go here) ...
-            // This is a placeholder. The full original logic is complex.
-            // For now, it will likely fail to parse correctly if the new format isn't present.
-            // A true fallback would require re-inserting the old parsing logic here carefully.
-            this.log('Legacy parsing not fully implemented in this refactor step. Trap may not load correctly from old format.', 'warning');
-            return null; // Or return a partially parsed object if possible
-        },
-
         /**
          * [NEW from OBBTest.js]
          * Calculates the world coordinates of a token's visual corners after rotation.
@@ -1777,6 +1736,49 @@ const TrapSystem = {
             
             TrapSystem.utils.log(`[constructGmNotesFromTrapData] Constructed notes: ${newGmNotes}`, 'debug');
             return newGmNotes.trim();
+        },
+
+        getSafeMacroDisplayName(macroString, maxLength = 25) {
+            if (!macroString || typeof macroString !== 'string') return "(DE)";
+
+            let displayName = macroString.trim();
+
+            // 1. Handle Roll20 Macros
+            if (displayName.startsWith('#')) {
+                return `Macro: ${displayName.substring(1)}`;
+            }
+
+            // 2. Handle API Commands (strip quotes if they exist from setup)
+            if (displayName.startsWith('"') && displayName.endsWith('"')) {
+                displayName = displayName.substring(1, displayName.length - 1);
+            }
+            if (displayName.startsWith('!')) {
+                displayName = `Cmd: ${displayName}`;
+            } else if (displayName.startsWith('$')) {
+                 displayName = `Cmd: !${displayName.substring(1)}`;
+            }
+
+            // 3. Handle Roll Templates
+            else if (displayName.startsWith('&{template:')) {
+                const nameMatch = displayName.match(/\{\{name=([^}]+)\}\}/);
+                if (nameMatch && nameMatch[1]) {
+                    displayName = `Template: "${nameMatch[1].trim()}"`;
+                } else {
+                    displayName = "Chat Template";
+                }
+            }
+
+            // 4. Handle Plain Text (if it wasn't caught above)
+            else {
+                 displayName = `Text: "${displayName}"`;
+            }
+
+            // 5. Truncate if necessary
+            if (displayName.length > maxLength) {
+                return displayName.substring(0, maxLength - 3) + "...";
+            }
+            
+            return displayName;
         },
 
         // Helper to parse and roll a luck die
@@ -2213,7 +2215,7 @@ const TrapSystem = {
             if (data.autoTrigger) {
                 if (data.primaryMacro && data.primaryMacro.macro) {
                     // Use the new centralized helper function
-                    const success = TrapSystem.triggers.markTriggered(triggeredToken.id, trapToken.id, data.primaryMacro.macro);
+                    const success = TrapSystem.triggers.markTriggered(triggeredToken.id, trapToken.id, 'primary');
                     if (success) {
                         TrapSystem.triggers.getTrapStatus(trapToken);
                         wasAutoTriggeredAndHasMacro = true;
@@ -2261,13 +2263,13 @@ const TrapSystem = {
 
                 let triggerOptionsString = "";
                 if (data.primaryMacro && data.primaryMacro.macro) {
-                    triggerOptionsString += `[🎯 ${data.primaryMacro.name}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${data.primaryMacro.macro})`;
+                    triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(data.primaryMacro.macro)}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} primary)`;
                 }
 
                 if(data.options && data.options.length) {
-                    data.options.forEach(o => {
+                    data.options.forEach((o, index) => {
                         if (triggerOptionsString) triggerOptionsString += ' ';
-                        triggerOptionsString += `[🎯 ${o.name}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} ${o.macro})`;
+                        triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(o.macro)}](!trapsystem marktriggered ${triggeredToken.id} ${trapToken.id} option ${index})`;
                     });
                 }
 
@@ -2391,21 +2393,35 @@ const TrapSystem = {
             });
         },
 
-        markTriggered(tokenId, trapId, macroName) {
+        markTriggered(tokenId, trapId, macroIdentifier) {
             // [UPDATED: Now also executes the macro immediately]
             if(TrapSystem.state.lockedTokens[tokenId]) {
                 TrapSystem.state.lockedTokens[tokenId].macroTriggered = true;
                 TrapSystem.utils.log(`Macro triggered for token ${tokenId}`, 'info');
-                if (macroName) {
+                if (macroIdentifier) {
                     const trapTokenObj = getObj("graphic", trapId);
                     const trappedTokenObj = getObj("graphic", tokenId);
                     const tagToIdMap = TrapSystem.utils.buildTagToIdMap(trapTokenObj, trappedTokenObj);
-                    const result = TrapSystem.utils.executeMacro(macroName, tagToIdMap);
-                    if (!result) {
-                        TrapSystem.utils.chat(`❌ Failed to execute macro: ${macroName}`);
+                    const trapData = TrapSystem.utils.parseTrapNotes(trapTokenObj.get("gmnotes"), trapTokenObj);
+                    let macroToExecute = null;
+                    if (macroIdentifier === 'primary') {
+                        macroToExecute = trapData.primaryMacro.macro;
+                    } else if (macroIdentifier.startsWith('option')) {
+                        const optionIndex = parseInt(macroIdentifier.split(' ')[1]);
+                        if (trapData.options && trapData.options[optionIndex]) {
+                            macroToExecute = trapData.options[optionIndex].macro;
+                        }
+                    }
+                    if (macroToExecute) {
+                        const result = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
+                        if (!result) {
+                            TrapSystem.utils.chat(`❌ Failed to execute macro: ${macroToExecute}`);
+                        }
+                    } else {
+                        TrapSystem.utils.chat(`❌ Invalid macro identifier: ${macroIdentifier}`);
                     }
                 } else {
-                    TrapSystem.utils.chat('❌ No macro name provided to markTriggered.');
+                    TrapSystem.utils.chat('❌ No macro identifier provided to markTriggered.');
                 }
             } else {
                 TrapSystem.utils.log(`No locked token found for ${tokenId} in markTriggered`, 'warning');
@@ -2427,30 +2443,30 @@ const TrapSystem = {
 
             let msg = [
                 '&{template:default} {{name=Trap Status}}',
-                `{{State=${data.isArmed ? "🎯 ARMED" : "🔴 DISARMED"}}}`, // Corrected string interpolation
-                `{{Uses=${data.currentUses}/${data.maxUses}}}` // Corrected string interpolation
+                `{{State=${data.isArmed ? "🎯 ARMED" : "🔴 DISARMED"}}}`,
+                `{{Uses=${data.currentUses}/${data.maxUses}}}`
             ];
 
             if (data.type === "interaction") {
-                if (data.primaryMacro && data.primaryMacro.name) {
-                    msg.push(`{{Primary Macro=${data.primaryMacro.name}}}`);
+                if (data.primaryMacro && data.primaryMacro.macro) {
+                    msg.push(`{{Primary Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.primaryMacro.macro)}}}`);
                 }
                 if (data.successMacro) {
-                    msg.push(`{{Success Macro=${data.successMacro}}}`);
+                    msg.push(`{{Success Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.successMacro)}}}`);
                 }
                 if (data.failureMacro) {
-                    msg.push(`{{Failure Macro=${data.failureMacro}}}`);
+                    msg.push(`{{Failure Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.failureMacro)}}}`);
                 }
                 if (data.checks && data.checks.length > 0) {
                     const checkInfo = data.checks.map(c => `${TrapSystem.config.SKILL_TYPES[c.type] || "🎲"} ${c.type} (DC ${c.dc})`).join('<br>');
                     msg.push(`{{Checks=${checkInfo}}}`);
                 }
             } else { // Standard trap
-                if (data.primaryMacro && data.primaryMacro.name) {
-                    msg.push(`{{Primary Macro=${data.primaryMacro.name}}}`);
+                if (data.primaryMacro && data.primaryMacro.macro) {
+                    msg.push(`{{Primary Macro=${TrapSystem.utils.getSafeMacroDisplayName(data.primaryMacro.macro)}}}`);
                 }
                 if (Array.isArray(data.options) && data.options.length) {
-                    const optionsList = data.options.map((opt, index) => `${index + 1}. ${opt.name}`).join('<br>');
+                    const optionsList = data.options.map((opt, index) => `${index + 1}. ${TrapSystem.utils.getSafeMacroDisplayName(opt.macro)}`).join('<br>');
                 msg.push(`{{Options=${optionsList}}}`);
             }
             }
@@ -2549,14 +2565,14 @@ const TrapSystem = {
                 controlPanel.push(`{{After Trigger=${trapData.currentUses > 1 ? "🎯 ARMED" : "🔴 AUTO-DISARMED"} Uses: ${trapData.currentUses - 1}/${trapData.maxUses}}}`);
                 
                 let triggerOptionsString = "";
-                if (trapData.primaryMacro && trapData.primaryMacro.name && trapData.primaryMacro.macro) {
-                    triggerOptionsString += `[🎯 ${trapData.primaryMacro.name}](!trapsystem manualtrigger ${trapToken.id} ${trapData.primaryMacro.macro})`;
+                if (trapData.primaryMacro && trapData.primaryMacro.macro) {
+                    triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(trapData.primaryMacro.macro)}](!trapsystem manualtrigger ${trapToken.id} primary)`;
                 }
 
                 if (trapData.options && trapData.options.length > 0) {
-                    trapData.options.forEach(option => {
+                    trapData.options.forEach((option, index) => {
                         if (triggerOptionsString !== "") triggerOptionsString += " "; // Add a space separator if primary was added
-                        triggerOptionsString += `[🎯 ${option.name}](!trapsystem manualtrigger ${trapToken.id} ${option.macro})`;
+                        triggerOptionsString += `[🎯 ${TrapSystem.utils.getSafeMacroDisplayName(option.macro)}](!trapsystem manualtrigger ${trapToken.id} option ${index})`;
                     });
                 }
 
@@ -2579,6 +2595,17 @@ const TrapSystem = {
                 TrapSystem.utils.chat('❌ Error: No token selected!');
                 return;
             }
+
+            // [FIX] Read existing notes to preserve detection settings
+            const existingNotesRaw = token.get("gmnotes") || "";
+            let existingNotesDecoded = "";
+            try { existingNotesDecoded = decodeURIComponent(existingNotesRaw); } catch(e) { existingNotesDecoded = existingNotesRaw; }
+            const detectionBlockMatch = existingNotesDecoded.match(/(\{!trapdetection\s+(?:(?!\{!}).)*\})/);
+            const existingDetectionBlock = detectionBlockMatch ? detectionBlockMatch[0] : "";
+            if (existingDetectionBlock) {
+                TrapSystem.utils.log(`[setupTrap] Preserving existing detection block: ${existingDetectionBlock}`, 'debug');
+            }
+
             const maxUses = parseInt(uses);
             if (isNaN(maxUses) || maxUses < 1) {
                 TrapSystem.utils.chat('❌ Error: Uses must be a positive number!');
@@ -2592,10 +2619,19 @@ const TrapSystem = {
 
                 let content = macroCmd.trim();
 
+                // NEW: Handle disguised templates like ^{template:...}
+                if (content.startsWith('^')) {
+                    // Replace the caret with an ampersand to make it a valid template.
+                    content = '&' + content.substring(1);
+                }
+
                 if (content.startsWith('"') && content.endsWith('"')) {
                     content = content.substring(1, content.length - 1).trim();
                 }
 
+                if (content.startsWith('&{')) { // This is a roll template
+                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
                 }
@@ -2612,7 +2648,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content}"`;
+                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
             };
 
             const primaryMacroProcessed = processMacro(mainMacro);
@@ -2654,13 +2690,14 @@ const TrapSystem = {
             parts.push(`movementTrigger:[on]`);
             parts.push(`autoTrigger:[${autoTrigger && (autoTrigger.toString().toLowerCase() === "true" || autoTrigger === true) ? 'on' : 'off'}]`);
 
-            const trapConfigString = `{!traptrigger ${parts.join(' ')}}`;
+            const newTriggerBlock = `{!traptrigger ${parts.join(' ')}}`;
+            const finalTrapConfigString = `${newTriggerBlock} ${existingDetectionBlock}`.trim();
             
-            TrapSystem.utils.log(`[setupTrap] Generated trapConfigString (New Format): ${trapConfigString}`, 'debug');
+            TrapSystem.utils.log(`[setupTrap] Generated final trapConfigString (New Format): ${finalTrapConfigString}`, 'debug');
             
             let encodedNotes = "";
             try {
-                encodedNotes = encodeURIComponent(trapConfigString);
+                encodedNotes = encodeURIComponent(finalTrapConfigString);
                  TrapSystem.utils.log(`[setupTrap] Encoded GM Notes (first 100 chars of ${encodedNotes.length}): ${encodedNotes.substring(0,100)}`, 'debug');
             } catch (e) {
                 TrapSystem.utils.log(`[setupTrap] Error during encodeURIComponent: ${e.message}`, 'error');
@@ -2696,6 +2733,16 @@ const TrapSystem = {
                 return;
             }
 
+            // [FIX] Read existing notes to preserve detection settings
+            const existingNotesRaw = token.get("gmnotes") || "";
+            let existingNotesDecoded = "";
+            try { existingNotesDecoded = decodeURIComponent(existingNotesRaw); } catch(e) { existingNotesDecoded = existingNotesRaw; }
+            const detectionBlockMatch = existingNotesDecoded.match(/(\{!trapdetection\s+(?:(?!\{!}).)*\})/);
+            const existingDetectionBlock = detectionBlockMatch ? detectionBlockMatch[0] : "";
+            if (existingDetectionBlock) {
+                TrapSystem.utils.log(`[setupInteractionTrap] Preserving existing detection block: ${existingDetectionBlock}`, 'debug');
+            }
+
             let positionValue = movement ? movement.toLowerCase() : 'intersection';
             if (positionValue === 'grid') {
                 positionValue = '0,0';
@@ -2713,6 +2760,12 @@ const TrapSystem = {
                 }
 
                 let content = macroCmd.trim();
+
+                // NEW: Handle disguised templates like ^{template:...}
+                if (content.startsWith('^')) {
+                    // Replace the caret with an ampersand to make it a valid template.
+                    content = '&' + content.substring(1);
+                }
 
                 if (content.startsWith('"') && content.endsWith('"')) {
                     content = content.substring(1, content.length - 1).trim();
@@ -2789,13 +2842,14 @@ const TrapSystem = {
             parts.push(`autoTrigger:[${autoTriggerIsEnabled ? 'on' : 'off'}]`);
             parts.push(`position:[${positionValue}]`);
 
-            const trapConfigString = `{!traptrigger ${parts.join(' ')}}`;
+            const newTriggerBlock = `{!traptrigger ${parts.join(' ')}}`;
+            const finalTrapConfigString = `${newTriggerBlock} ${existingDetectionBlock}`.trim();
 
-            TrapSystem.utils.log(`[setupInteractionTrap] Generated trapConfigString (New Format): ${trapConfigString}`, 'debug');
+            TrapSystem.utils.log(`[setupInteractionTrap] Generated final trapConfigString (New Format): ${finalTrapConfigString}`, 'debug');
             
             let encodedNotes = "";
             try {
-                encodedNotes = encodeURIComponent(trapConfigString);
+                encodedNotes = encodeURIComponent(finalTrapConfigString);
                 TrapSystem.utils.log(`[setupInteractionTrap] Encoded GM Notes (first 100 chars of ${encodedNotes.length}): ${encodedNotes.substring(0,100)}`, 'debug');
             } catch (e) {
                 TrapSystem.utils.log(`[setupInteractionTrap] Error during encodeURIComponent: ${e.message}`, 'error');
@@ -2872,7 +2926,7 @@ const TrapSystem = {
             }
         },
 
-        manualMacroTrigger(trapId, macroName) {
+        manualMacroTrigger(trapId, macroIdentifier) {
             const trapToken = getObj("graphic", trapId);
             if (!trapToken) {
                 TrapSystem.utils.chat('❌ Error: Trap token not found!');
@@ -2885,35 +2939,48 @@ const TrapSystem = {
             }
 
             const tagToIdMap = TrapSystem.utils.buildTagToIdMap(trapToken, null, null);
-            const macroExecuted = TrapSystem.utils.executeMacro(macroName, tagToIdMap);
-            if (macroExecuted) {
-                const newUses = trapData.currentUses - 1;
-                const stillArmed = newUses > 0;
-                TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
-                if (!stillArmed) {
-                    TrapSystem.utils.sendDepletedMessage(trapToken);
+            let macroToExecute = null;
+            if (macroIdentifier === 'primary') {
+                macroToExecute = trapData.primaryMacro.macro;
+            } else if (macroIdentifier.startsWith('option')) {
+                const optionIndex = parseInt(macroIdentifier.split(' ')[1]);
+                if (trapData.options && trapData.options[optionIndex]) {
+                    macroToExecute = trapData.options[optionIndex].macro;
                 }
-
-                // Determine correct aura color based on trap type
-                const isInteraction = trapData.type === 'interaction';
-                let auraColor;
-                if (stillArmed) {
-                    if (TrapSystem.state.triggersEnabled) {
-                        auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED;
-                    } else {
-                        auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+            }
+            if (macroToExecute) {
+                const macroExecuted = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
+                if (macroExecuted) {
+                    const newUses = trapData.currentUses - 1;
+                    const stillArmed = newUses > 0;
+                    TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
+                    if (!stillArmed) {
+                        TrapSystem.utils.sendDepletedMessage(trapToken);
                     }
-                } else {
-                    auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION : TrapSystem.config.AURA_COLORS.DISARMED;
-                }
 
-                trapToken.set({
-                    aura1_color: auraColor,
-                    aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
-                    showplayers_aura1: false
-                });
+                    // Determine correct aura color based on trap type
+                    const isInteraction = trapData.type === 'interaction';
+                    let auraColor;
+                    if (stillArmed) {
+                        if (TrapSystem.state.triggersEnabled) {
+                            auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED;
+                        } else {
+                            auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+                        }
+                    } else {
+                        auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION : TrapSystem.config.AURA_COLORS.DISARMED;
+                    }
+
+                    trapToken.set({
+                        aura1_color: auraColor,
+                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
+                        showplayers_aura1: false
+                    });
+                } else {
+                    TrapSystem.utils.chat('❌ Failed to execute the macro.');
+                }
             } else {
-                TrapSystem.utils.chat('❌ Failed to execute the macro.');
+                TrapSystem.utils.chat(`❌ Invalid macro identifier: ${macroIdentifier}`);
             }
         }
     },
@@ -3000,7 +3067,7 @@ const TrapSystem = {
                         if (trappedToken) {
                             // If a token is already associated, use markTriggered. This executes the macro
                             // and sets the flag for later use-depletion, but does NOT deplete the use now.
-                            TrapSystem.triggers.markTriggered(trappedToken.id, token.id, config.primaryMacro.macro);
+                            TrapSystem.triggers.markTriggered(trappedToken.id, token.id, 'primary');
                         } else {
                             // If it's a purely manual trigger with no token yet, just execute the primary macro.
                             // The macro runs, but no use is depleted yet. The GM will select a token
@@ -3284,64 +3351,8 @@ const TrapSystem = {
             }
         },
 
-        handleCustomCheck(token, playerid, triggeredTokenId = null) {
-            TrapSystem.utils.log(`handleCustomCheck tokenId:${token.id}, playerid:${playerid}`, 'debug');
-            const config = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token);
-            if (!config) return;
-            const tokenName = token.get("name") || "Unknown Token";
-            const url2 = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = url2 === '👤' ? '👤' : `<img src="${url2}" width="20" height="20">`;
-
-            let menu = `&{template:default} {{name=Custom Skill Check}}`;
-            menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
-            let skillButtons = Object.entries(TrapSystem.config.SKILL_TYPES).map(([type, emoji]) => {
-                const safeType = type.replace(/ /g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-                return `[${emoji} ${type}](!trapsystem setcheck ${token.id} ${safeType} ${playerid} ${triggeredTokenId || ''})`;
-            }).join(" | ");
-            menu += `{{Skills=${skillButtons}}}`;
-            TrapSystem.utils.chat(menu);
-        },
-
-        handleSetCheck(token, checkType, playerid, triggeredTokenId = null) {
-            TrapSystem.utils.log(`handleSetCheck tokenId:${token.id}, checkType:${checkType}, playerid:${playerid}`, 'debug');
-            const skillType = Object.keys(TrapSystem.config.SKILL_TYPES).find(type => 
-                type.replace(/ /g, '_').replace(/[^a-zA-Z0-9_]/g, '') === checkType
-            ) || checkType;
-            const config = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token);
-            if (!config) return;
-
-            const tokenName = token.get("name") || "Unknown Token";
-            const url3 = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = url3 === '👤' ? '👤' : `<img src="${url3}" width="20" height="20">`;
-            const emoji = TrapSystem.config.SKILL_TYPES[skillType] || "🎲";
-
-            const prevPending = TrapSystem.state.pendingChecks[playerid] || {};
-            TrapSystem.state.pendingChecks[playerid] = {
-                token: token,
-                checkIndex: 'custom',
-                config: {
-                    ...config,
-                    checks: [{
-                        type: skillType,
-                        dc: null
-                    }]
-                },
-                advantage: null,
-                firstRoll: null,
-                playerid: playerid,
-                characterId: prevPending.characterId || null,
-                characterName: prevPending.characterName || null,
-                triggeredTokenId: triggeredTokenId
-            };
-            let menu = `&{template:default} {{name=${emoji} Set DC for ${skillType}}}`;
-            menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
-            menu += `{{DC=[Set DC](!trapsystem setdc ${token.id} ?{DC|10} ${playerid} ${skillType.replace(/ /g, '_')})}}`;
-            TrapSystem.utils.chat(menu);
-        },
-
-        handleSetDC(token, dc, playerid, checkType, triggeredTokenId = null) {
-            TrapSystem.utils.log(`handleSetDC tokenId:${token.id}, dc:${dc}, playerid:${playerid}, checkType:${checkType}, triggeredTokenId:${triggeredTokenId}`, 'debug');
-            const skillTypeWithSpaces = checkType.replace(/_/g, ' ');
+        handleCustomCheck(token, playerid, triggeredTokenId, skillType, dc) {
+            TrapSystem.utils.log(`handleCustomCheck tokenId:${token.id}, playerid:${playerid}, triggeredTokenId:${triggeredTokenId}, skillType:${skillType}, dc:${dc}`, 'debug');
             const config = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token);
             if (!config) return;
 
@@ -3352,46 +3363,44 @@ const TrapSystem = {
             }
 
             const prevPending = TrapSystem.state.pendingChecks[playerid] || {};
-            TrapSystem.state.pendingChecks[playerid] = {
+            const checkData = {
+                type: skillType,
+                dc: newDc
+            };
+
+            const pendingCheck = {
                 token: token,
                 checkIndex: 'custom',
-                config: {
-                    ...config,
-                    checks: [{
-                        type: skillTypeWithSpaces,
-                        dc: newDc
-                    }]
-                },
+                config: { ...config, checks: [checkData] },
                 advantage: null,
                 firstRoll: null,
                 playerid: playerid,
-                characterId: prevPending.characterId || null,
-                characterName: prevPending.characterName || null,
-                triggeredTokenId: prevPending.triggeredTokenId
+                characterId: prevPending.characterId,
+                characterName: prevPending.characterName,
+                triggeredTokenId: triggeredTokenId
             };
-            // Also update pendingChecksByChar if characterId exists
-            if (prevPending.characterId) {
-                 TrapSystem.state.pendingChecksByChar[prevPending.characterId] = TrapSystem.state.pendingChecks[playerid];
+            TrapSystem.state.pendingChecks[playerid] = pendingCheck;
+            if (pendingCheck.characterId) {
+                TrapSystem.state.pendingChecksByChar[pendingCheck.characterId] = pendingCheck;
             }
-
 
             const tokenName = token.get("name") || "Unknown Token";
-            const url4 = TrapSystem.utils.getTokenImageURL(token);
-            const tokenIcon = url4 === '👤' ? '👤' : `<img src="${url4}" width="20" height="20">`;
-            const emoji = TrapSystem.config.SKILL_TYPES[skillTypeWithSpaces] || "🎲";
+            const tokenIconUrl = TrapSystem.utils.getTokenImageURL(token, 'thumb');
+            const tokenIcon = tokenIconUrl === '👤' ? '👤' : `<img src="${tokenIconUrl}" width="20" height="20">`;
+            const emoji = TrapSystem.config.SKILL_TYPES[skillType] || "🎲";
 
-            let menu = `&{template:default} {{name=${emoji} ${skillTypeWithSpaces} Check (DC ${newDc})}}`;
+            let menu = `&{template:default} {{name=${emoji} ${skillType} Check (DC ${newDc})}}`;
             menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
             menu += `{{Roll=`;
-            menu += `[Advantage](!trapsystem rollcheck ${token.id} custom advantage ${playerid} ${triggeredTokenId || ''}) | `;
-            menu += `[Normal](!trapsystem rollcheck ${token.id} custom normal ${playerid} ${triggeredTokenId || ''}) | `;
-            menu += `[Disadvantage](!trapsystem rollcheck ${token.id} custom disadvantage ${playerid} ${triggeredTokenId || ''})`;
+            menu += `[Advantage](!trapsystem rollcheck ${token.id} custom advantage ${playerid} 0 ${triggeredTokenId || ''}) | `;
+            menu += `[Normal](!trapsystem rollcheck ${token.id} custom normal ${playerid} 0 ${triggeredTokenId || ''}) | `;
+            menu += `[Disadvantage](!trapsystem rollcheck ${token.id} custom disadvantage ${playerid} 0 ${triggeredTokenId || ''})`;
             
             if (!TrapSystem.state.displayDCForCheck[playerid]) {
-                 menu += ` | [Display DC](!trapsystem displaydc ${token.id} custom ${playerid} ${triggeredTokenId || ''})`;
+                menu += ` | [Display DC](!trapsystem displaydc ${token.id} custom ${playerid})`;
             }
             menu += `}}`;
-            // This menu is for the GM to choose roll type after setting a custom DC
+
             TrapSystem.utils.chat(menu);
         },
 
@@ -3498,7 +3507,8 @@ const TrapSystem = {
                 }).join(" | ");
                 menu += `{{Skill Checks=${checkOptions}}}`;
             }
-            menu += `{{Custom Check=[🎲 Set Custom Check](!trapsystem customcheck ${token.id} ${playerid} ${triggeredTokenId || ''})}}`;
+            const skillListForQuery = Object.keys(TrapSystem.config.SKILL_TYPES).join('|');
+            menu += `{{Custom Check=[🎲 Set Custom Check](!trapsystem customcheck ${token.id} ${playerid} ${triggeredTokenId || 'null'} ?{Skill|${skillListForQuery}} ?{DC|10})}}`;
             TrapSystem.utils.chat(menu);
         },
 
@@ -4138,13 +4148,25 @@ const TrapSystem = {
             let decodedNotes = "";
             try { decodedNotes = decodeURIComponent(notes); } catch (e) { decodedNotes = notes; }
 
-            const detectionBlockRegex = /\{!trapdetection\s+([^}]+)\}/;
+            // This regex is specifically designed not to match across different {!...} blocks.
+            const detectionBlockRegex = /\{!trapdetection\s+((?:(?!\{!}).)*)\}/;
             const match = decodedNotes.match(detectionBlockRegex);
 
-            if (match && !/detected:\s*\[on\]/.test(match[1])) {
-                const newDetectionBlock = match[1] + ' detected:[on]';
-                const updatedNotes = decodedNotes.replace(detectionBlockRegex, `{!trapdetection ${newDetectionBlock}}`);
+            if (match && match[1] && !/detected:\s*\[on\]/.test(match[1])) {
+                const originalFullBlock = match[0];
+                const originalBlockContent = match[1];
+                
+                // Add the detected flag to the content
+                const newBlockContent = originalBlockContent.trim() + ' detected:[on]';
+                // Reconstruct the full block string
+                const newFullBlock = `{!trapdetection ${newBlockContent}}`;
+                
+                // Replace the old block with the new one in the notes
+                const updatedNotes = decodedNotes.replace(originalFullBlock, newFullBlock);
+                
                 noticedTrap.set("gmnotes", encodeURIComponent(updatedNotes));
+                // Re-parse the notes to get the most up-to-date config for message generation
+                trapConfig = TrapSystem.utils.parseTrapNotes(updatedNotes, noticedTrap, false);
             }
 
 
@@ -4182,7 +4204,12 @@ const TrapSystem = {
             // --- Define fixed template parts and default message contents ---
             const PLAYER_MSG_TEMPLATE_NAME = "⚠️ Alert!"; // Using the "Alert!" version
             const PLAYER_MSG_PREFIX = `&{template:default} {{name=${PLAYER_MSG_TEMPLATE_NAME}}} {{message=`;
-            const GM_MSG_TEMPLATE_NAME = "🎯 Passive Spot";
+            
+            // Get player's token image for GM message header
+            const playerTokenImgUrl = TrapSystem.utils.getTokenImageURL(triggeringToken, 'thumb');
+            const playerTokenImage = playerTokenImgUrl === '👤' ? '' : `<img src='${playerTokenImgUrl}' width='30' height='30' style='vertical-align: middle; margin-left: 5px;'>`;
+            const GM_MSG_TEMPLATE_NAME = `🎯 Passive Spot ${playerTokenImage}`;
+
             const GM_MSG_PREFIX = `&{template:default} {{name=${GM_MSG_TEMPLATE_NAME}}} {{message=`;
             const MSG_SUFFIX = "}}";
 
@@ -4330,6 +4357,67 @@ const TrapSystem = {
             return { finalPP, basePP, luckBonus };
         },
 
+        updateAuraForDetectionRange(trapToken) {
+            if (!trapToken || !TrapSystem.utils.isTrap(trapToken)) return;
+
+            // NEW Check for global hide
+            if (TrapSystem.state.detectionAurasTemporarilyHidden) {
+                trapToken.set({ aura2_radius: '' });
+                return;
+            }
+
+            const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+            if (!trapData) {
+                // If it's not a valid trap, ensure the aura is off.
+                trapToken.set({ aura2_radius: '', aura2_color: '#000000' });
+                return;
+            }
+
+            // AURA VISIBILITY CHECK: Only show the aura if showDetectionAura is explicitly true.
+            // If it's false or undefined, hide the aura.
+            if (trapData.showDetectionAura !== true) {
+                trapToken.set({ aura2_radius: '' }); // Setting radius to empty string hides it.
+                TrapSystem.utils.log(`Hiding detection aura for ${trapToken.id} because showDetectionAura is not explicitly true.`, 'debug');
+                return;
+            }
+            
+            // If we are here, showDetectionAura is true or undefined (defaults to true).
+            // Now determine the correct color and radius based on trap state.
+            const isArmedAndHasUses = trapData.isArmed && trapData.currentUses > 0;
+            const isDetected = trapData.detected;
+            let aura2Color = '#000000';
+            let aura2Radius = '';
+
+            if (isArmedAndHasUses) {
+                aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DETECTED : TrapSystem.config.AURA_COLORS.DETECTION;
+                // Calculate radius based on range
+                const pageSettings = TrapSystem.utils.getPageSettings(trapToken.get('_pageid'));
+                if (pageSettings.valid && trapData.passiveMaxRange > 0) {
+                    const pixelsPerFoot = pageSettings.gridSize / pageSettings.scale;
+                    const tokenRadiusPixels = Math.max(trapToken.get('width'), trapToken.get('height')) / 2;
+                    const tokenRadiusFt = tokenRadiusPixels / pixelsPerFoot;
+                    aura2Radius = Math.max(0, trapData.passiveMaxRange - tokenRadiusFt);
+                }
+            } else { // Disarmed or no uses
+                aura2Radius = 0; // Show a visible dot to indicate state
+                aura2Color = isDetected ? TrapSystem.config.AURA_COLORS.DISARMED_DETECTED : TrapSystem.config.AURA_COLORS.DISARMED_UNDETECTED;
+            }
+            
+            // Override color if passive detection is manually toggled off for the trap
+            if (trapData.passiveEnabled === false) {
+                aura2Color = TrapSystem.config.AURA_COLORS.PASSIVE_DISABLED;
+            }
+
+            trapToken.set({
+                aura2_color: aura2Color,
+                aura2_radius: aura2Radius
+            });
+
+            TrapSystem.utils.log(`--- Detection Aura Recalculated for ${trapToken.id} ---`);
+            TrapSystem.utils.log(`Desired Range from Center: ${trapData.passiveMaxRange || 0} ft`);
+            TrapSystem.utils.log(`Setting Aura2 Radius to: ${aura2Radius} and Color: ${aura2Color}`);
+        },
+
         showPassiveSetupMenu(trapToken, playerId, providedTrapData = null) {
             if (!trapToken) {
                 TrapSystem.utils.chat("❌ No trap token selected for passive setup.", playerId);
@@ -4435,7 +4523,7 @@ const TrapSystem = {
                 "&{template:default}",
                 `{{name=🛠️ Passive Setup: ${trapToken.get('name') || 'Unnamed Trap'}}}`,
                 `{{Current DC=${currentDC}}}`,
-                `{{Current Range=${currentRange}ft (0 for none)}}`,
+                `{{Current Range from center=${currentRange}ft (0 for none)}}`,
                 `{{Detection Aura=${currentShowAura ? 'Enabled' : 'Disabled'}}}`,
                 `{{PC Msg Content=${playerMsgPreview}}}`,
                 `{{GM Msg Content=${gmMsgPreview}}}`,
@@ -4444,7 +4532,7 @@ const TrapSystem = {
                 `{{Luck Die=${currentLuckDie}}}`,
                 "{{Actions=",
                 `[Set Trap DC](!trapsystem setpassive dc ${trapToken.id} ?{DC|${currentDC}})`,
-                `[Set Range](!trapsystem setpassive range ${trapToken.id} ?{Range ft - 0 for none|${currentRange}})`,
+                `[Set Range](!trapsystem setpassive range ${trapToken.id} ?{Range ft from Center - 0 for none|${currentRange}})`,
                 `[Set PC Msg](!trapsystem setpassive playermsg ${trapToken.id} ?{Player Message with {placeholders}|${playerMsgQueryDefault}})`,
                 `[Set GM Msg](!trapsystem setpassive gmmsg ${trapToken.id} ?{GM Message with {placeholders}|${gmMsgQueryDefault}})`,
                 `[Toggle Luck](!trapsystem setpassive luckroll ${trapToken.id} ${!currentLuckRoll})`,
@@ -4601,6 +4689,7 @@ const TrapSystem = {
                     TrapSystem.utils.log(`Successfully updated GM notes for trap ${trapId}. New notes (raw): '${newGmNotesString}'`, 'info');
                     // Re-parse to update visuals AND get the canonical data object for the menu refresh
                     const newlyParsedData = TrapSystem.utils.parseTrapNotes(encodedNewGmNotes, trapToken);
+                    TrapSystem.passive.updateAuraForDetectionRange(trapToken);
                     TrapSystem.passive.showPassiveSetupMenu(trapToken, playerId, newlyParsedData);
 
                 } catch (e) {
@@ -4763,6 +4852,52 @@ const TrapSystem = {
             } else {
                 TrapSystem.utils.chat(message); // Fallback to public chat if no playerID
             }
+        },
+        
+        hideAllAuras(durationMinutes, playerId) {
+            if (TrapSystem.state.hideAurasTimeout) {
+                clearTimeout(TrapSystem.state.hideAurasTimeout);
+                TrapSystem.state.hideAurasTimeout = null;
+            }
+
+            TrapSystem.state.detectionAurasTemporarilyHidden = true;
+
+            const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapSystem.utils.isTrap(t));
+            allTraps.forEach(trapToken => {
+                TrapSystem.passive.updateAuraForDetectionRange(trapToken);
+            });
+
+            let message = "👁️ All detection auras are now hidden.";
+            
+            const durationMs = parseFloat(durationMinutes) * 60 * 1000;
+            if (!isNaN(durationMs) && durationMs > 0) {
+                TrapSystem.state.hideAurasTimeout = setTimeout(() => {
+                    this.showAllAuras(playerId, true);
+                }, durationMs);
+                message += ` They will automatically reappear in ${durationMinutes} minute(s).`;
+            }
+
+            TrapSystem.utils.whisper(playerId, message);
+        },
+
+        showAllAuras(playerId, isAuto = false) {
+            if (TrapSystem.state.hideAurasTimeout) {
+                clearTimeout(TrapSystem.state.hideAurasTimeout);
+                TrapSystem.state.hideAurasTimeout = null;
+            }
+
+            TrapSystem.state.detectionAurasTemporarilyHidden = false;
+
+            const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapSystem.utils.isTrap(t));
+            allTraps.forEach(trapToken => {
+                TrapSystem.passive.updateAuraForDetectionRange(trapToken);
+            });
+            
+            const message = isAuto 
+                ? "⏰ Timer expired. All detection auras have been restored."
+                : "👁️ All detection auras are now restored.";
+
+            TrapSystem.utils.whisper(playerId, message);
         }
     }
 };
@@ -4841,6 +4976,7 @@ on("change:graphic", async (obj, prev) => {
                 // If it IS a trap (either new or modified), parse its notes to set the correct visuals.
                 // We pass the RAW notes to parseTrapNotes, as it has its own decoding logic.
                 TrapSystem.utils.parseTrapNotes(currentNotesRaw, obj);
+                TrapSystem.passive.updateAuraForDetectionRange(obj); // Recalculate aura on notes change
             }
         }
         
@@ -4852,6 +4988,7 @@ on("change:graphic", async (obj, prev) => {
             if (sizeChanged) {
                 // If trap was resized, its aura might need to be recalculated.
                 obj.set({ aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(obj) });
+                TrapSystem.passive.updateAuraForDetectionRange(obj); // Recalculate detection aura on resize
             }
 
             if ((sizeChanged || positionOrRotationChanged) && Object.values(TrapSystem.state.lockedTokens).some(lock => lock.trapToken === obj.id)) {
@@ -5049,7 +5186,7 @@ on("chat:message",(msg) => {
 
         // Whitelist 'interact' as it gets the trap token ID from arguments.
         // Sub-actions within 'interact' will handle specific token needs (e.g., a triggering character for a skill check).
-        if (!selectedToken && !["enable", "disable", "toggle", "status", "help", "allowall", "exportmacros", "resetstates", "resetmacros", "fullreset", "allowmovement", "resetdetection", "interact"].includes(action.toLowerCase())) {
+        if (!selectedToken && !["enable", "disable", "toggle", "status", "help", "allowall", "exportmacros", "resetstates", "resetmacros", "fullreset", "allowmovement", "resetdetection", "interact", "hidedetection", "showdetection"].includes(action.toLowerCase())) {
             TrapSystem.utils.chat('❌ Error: No token selected for this action!');
             TrapSystem.utils.log(`[API Handler] Action '${action}' requires a selected token, but none was found.`, 'warn');
                 return;
@@ -5172,15 +5309,15 @@ on("chat:message",(msg) => {
                 // and then join everything after that to reassemble the macro name.
                 const parts = msg.content.split(' ');
                 if (parts.length < 5) {
-                    TrapSystem.utils.chat('❌ marktriggered: Missing tokenId, trapId, or macroName!');
+                    TrapSystem.utils.chat('❌ marktriggered: Missing tokenId, trapId, or identifier!');
                     break;
                 }
                 const tokenId = parts[2];
                 const trapId = parts[3];
-                const macroName = parts.slice(4).join(' '); // Re-assembles multi-word macros
-                TrapSystem.triggers.markTriggered(tokenId, trapId, macroName);
+                const macroIdentifier = parts.slice(4).join(' '); // e.g., "primary" or "option 0"
+                TrapSystem.triggers.markTriggered(tokenId, trapId, macroIdentifier);
                 break;
-                }
+            }
             case "enable":
                 TrapSystem.triggers.enableTriggers();
                 break;
@@ -5295,33 +5432,25 @@ on("chat:message",(msg) => {
                 }
                 break;
             case "customcheck":
-                if(args.length < 4) {
-                    TrapSystem.utils.chat("❌ Missing parameters for customcheck command!");
+                if (args.length < 7) { // e.g., !trapsystem customcheck TRAPID PLAYERID TOKENID Skill Name 10
+                    TrapSystem.utils.chat("❌ Missing parameters for customcheck command! Requires at least skill and DC.");
                 return;
             }
                 {
                     const cToken = getObj("graphic", args[2]);
-                    if(!cToken) {
-                        TrapSystem.utils.chat("❌ Invalid trap token ID!");
+                    if (!cToken) {
+                        TrapSystem.utils.chat("❌ Invalid trap token ID for customcheck!");
                         return;
                     }
-                    // Pass triggeredTokenId from args[4]
-                    TrapSystem.menu.handleCustomCheck(cToken, args[3], args[4] || null);
-                }
-                break;
-            case "setcheck":
-                if(args.length < 5) {
-                    TrapSystem.utils.chat("❌ Missing parameters for setcheck!");
-                    return;
-                }
-                {
-                    const sToken = getObj("graphic", args[2]);
-                    if(!sToken) {
-                        TrapSystem.utils.chat("❌ Invalid trap token ID!");
-                        return;
-                    }
-                    // Pass triggeredTokenId from args[6]
-                    TrapSystem.menu.handleSetCheck(sToken, args[3], args[4], args[5] || null);
+                    const playerid = args[3];
+                    const triggeredTokenId = args[4] !== 'null' ? args[4] : null;
+
+                    // The last argument is always the DC.
+                    const dc = args[args.length - 1];
+                    // Everything between arg 4 and the last arg is the skill name.
+                    const skillType = args.slice(5, args.length - 1).join(' ');
+
+                    TrapSystem.menu.handleCustomCheck(cToken, playerid, triggeredTokenId, skillType, dc);
                 }
                 break;
             case "rollcheck":
@@ -5384,13 +5513,17 @@ on("chat:message",(msg) => {
                     TrapSystem.menu.handleFailAction(failToken, args[3], args[4]);
                 }
                 break;
-            case "manualtrigger":
-                if(args.length < 4) {
+            case "manualtrigger": {
+                const parts = msg.content.split(' ');
+                if (parts.length < 4) {
                     TrapSystem.utils.chat("❌ Missing parameters for manualtrigger!");
                     return;
                 }
-                TrapSystem.triggers.manualMacroTrigger(args[2], args[3]);
+                const trapId = parts[2];
+                const macroIdentifier = parts.slice(3).join(' '); // e.g., "primary" or "option 0"
+                TrapSystem.triggers.manualMacroTrigger(trapId, macroIdentifier);
                 break;
+            }
             case "displaydc":
                 // args: !trapsystem displaydc trapToken.id checkIndex playerid
                 if (args.length < 5) {
@@ -5490,6 +5623,14 @@ on("chat:message",(msg) => {
                 break;
             case 'resetdetection':
                 TrapSystem.commands.handleResetDetection(selectedToken, msg.playerid);
+                break;
+            case "hidedetection": { // <-- ADD THIS BLOCK
+                const duration = args[2] || 0; // If no duration, it hides indefinitely until 'show' is called
+                TrapSystem.commands.hideAllAuras(duration, msg.playerid);
+                break;
+            }
+            case "showdetection": // <-- AND ADD THIS BLOCK
+                TrapSystem.commands.showAllAuras(msg.playerid);
                 break;
             case "rearm": {
                 const tid = args[2];
