@@ -1196,17 +1196,17 @@ const TrapSystem = {
                 '[❌ Disable](!trapsystem disable) - Disable triggers (does not unlock tokens)\n',
                 '[👥 Allow All](!trapsystem allowall) - Allow movement for all locked tokens\n',
                 '[🧹 Reset Detection](!trapsystem resetdetection) - Clears all passively noticed traps for all\n',
-                '[🙈 Hide Detections](!trapsystem hidedetection ?{Minutes|0}) - Hide all detection auras (0 for indefinitely)\n',
+                '[🙈 Hide Detections](!trapsystem hidedetection ?{Minutes - 0 for indefinitely|0}) - Hide all detection auras (0 = indefinitely)\n',
                 '[👁️ Show Detections](!trapsystem showdetection) - Show all detection auras\n',
                 '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
                 '{{Tips=',
                 '• <b style="color:#f04747;">Macro Types:</b> Actions can be a Roll20 Macro <span style="color:#ffcb05">#MacroName</span>, an API command <span style="color:#ffcb05">"!command"</span>, or plain chat <span style="color:#ffcb05">"text message"</span>.<br>',
                 '• <b style="color:#f04747;">Workarounds:</b> To use API commands or templates in setup, you MUST disguise them. Use <span style="color:#ffcb05">$</span> for commands e.g., <span style="color:#ffcb05">"$deal-damage"</span> and <span style="color:#ffcb05">^</span> for templates e.g., <span style="color:#ffcb05">"^｛template:default｝..."</span>.<br>',
-                '• <b style="color:#f04747;">Use Quotes!:</b> When using setup commands, any action with spaces MUST be wrapped in <span style="color:#ffcb05">"double quotes"</span>.<br>',
+                '• <b style="color:#f04747;">Use Quotes!:</b> When using setup commands, any Text, Template or Command with spaces MUST be wrapped in <span style="color:#ffcb05">"double quotes"</span>.<br>',
                 '• <b style="color:#f04747;">Placeholders:</b> Use <span style="color:#ffcb05">&lt;&trap&gt;</span> for the trap token and <span style="color:#ffcb05">&lt;&trapped&gt;</span> for the token that triggered it.<br>',
                 '• <b style="color:#f04747;">Token Selection:</b> Most commands require a trap token to be selected first.<br>',
                 '• <b style="color:#f04747;">Interaction Traps:</b> You can disable movement triggers on interaction traps to make them manually activated only.<br>',
-                '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps support advantage/disadvantage.}}'
+                '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps accept advantage/disadvantage.}}'
             ].join(' ');
             sendChat(target, `/w GM ${helpMenu}`);
         },
