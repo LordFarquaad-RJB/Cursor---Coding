@@ -1,4 +1,4 @@
-# Cursor Coding Scripts
+# Roll20 MOD Scripts
 
 This repository contains several Roll20 API scripts used to manage effects, lighting, shops and traps. Each script is located in the `Live Files` folder.
 
