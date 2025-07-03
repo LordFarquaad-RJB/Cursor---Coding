@@ -386,6 +386,578 @@ var TrapSystem = (function (exports) {
     whisper: whisper
   });
 
+  // src/trap-detection.js
+  // Passive detection logic (line-of-sight, perception checks, aura updates)
+
+
+  // Wrapper around legacy LOS check
+  function checkLineOfSight(token1, token2) {
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (legacyUtils && typeof legacyUtils.checkLineOfSight === 'function') {
+      return legacyUtils.checkLineOfSight(token1, token2);
+    }
+    // Simple fallback - just check if tokens are on same page
+    return token1.get('_pageid') === token2.get('_pageid');
+  }
+
+  // Calculate if a character can potentially spot a trap based on distance and LOS
+  function canDetectTrap(characterToken, trapToken, maxDistance = 60) {
+    if (!characterToken || !trapToken) return false;
+    
+    const distance = TrapUtils.geometry.calculateTokenDistance(characterToken, trapToken);
+    if (distance.mapUnitDistance > maxDistance) return false;
+    
+    return checkLineOfSight(characterToken, trapToken);
+  }
+
+  // Update trap aura colors based on detection state
+  function updateTrapAura(trapToken, detectionState) {
+    if (!trapToken) return;
+    
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (legacyUtils && typeof legacyUtils.parseTrapNotes === 'function') {
+      const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+      if (!trapData) return;
+      
+      let auraColor;
+      if (detectionState.isDetected) {
+        auraColor = trapData.isArmed ? Config.AURA_COLORS.DETECTED : Config.AURA_COLORS.DISARMED_DETECTED;
+      } else {
+        auraColor = trapData.isArmed ? Config.AURA_COLORS.DETECTION : Config.AURA_COLORS.DISARMED_UNDETECTED;
+      }
+      
+      trapToken.set({
+        aura1_color: auraColor,
+        aura1_square: false
+      });
+    }
+  }
+
+  // Perform passive perception check for a character against a trap
+  function performPassivePerceptionCheck(characterToken, trapToken, passivePerception = 10) {
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (legacyUtils && typeof legacyUtils.parseTrapNotes === 'function') {
+      const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+      if (!trapData || !trapData.passivePerception) return false;
+      
+      const trapDC = parseInt(trapData.passivePerception) || 15;
+      return passivePerception >= trapDC;
+    }
+    return false;
+  }
+
+  // Main passive detection handler
+  function handlePassiveDetection(characterToken, nearbyTraps = []) {
+    if (!characterToken) return;
+    
+    nearbyTraps.forEach(trapToken => {
+      if (!canDetectTrap(characterToken, trapToken)) return;
+      
+      // Get character's passive perception (simplified - would need character sheet integration)
+      const passivePerception = 10; // Default, should be extracted from character sheet
+      
+      const isDetected = performPassivePerceptionCheck(characterToken, trapToken, passivePerception);
+      
+      updateTrapAura(trapToken, { isDetected });
+      
+      if (isDetected) {
+        TrapUtils.log(`${characterToken.get('name')} detected a trap!`, 'success');
+      }
+    });
+  }
+
+  const detection = {
+    checkLineOfSight,
+    canDetectTrap,
+    updateTrapAura,
+    performPassivePerceptionCheck,
+    handlePassiveDetection
+  };
+
+  // src/trap-interaction.js
+  // Interaction logic (menus, skill checks) for trap system
+
+
+  // Perform a skill check against a trap
+  function performSkillCheck(characterToken, trapToken, skillType, rollResult = null) {
+    if (!characterToken || !trapToken) {
+      TrapUtils.log('Invalid tokens for skill check', 'error');
+      return { success: false, message: 'Invalid parameters' };
+    }
+    
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
+      return { success: false, message: 'Legacy utilities not available' };
+    }
+    
+    const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+    if (!trapData) {
+      return { success: false, message: 'Invalid trap configuration' };
+    }
+    
+    // Get the appropriate DC for this skill type
+    let dc = 15; // default
+    switch (skillType.toLowerCase()) {
+      case 'perception':
+        dc = trapData.passivePerception || trapData.dc || 15;
+        break;
+      case 'investigation':
+        dc = trapData.investigationDC || trapData.dc || 15;
+        break;
+      case 'sleight of hand':
+      case 'thieves tools':
+        dc = trapData.disarmDC || trapData.dc || 15;
+        break;
+      default:
+        dc = trapData.dc || 15;
+    }
+    
+    // If no roll result provided, we're just setting up the check
+    if (rollResult === null) {
+      return {
+        success: true,
+        dc: dc,
+        skillType: skillType,
+        message: `${skillType} check required (DC ${dc})`
+      };
+    }
+    
+    const success = rollResult >= dc;
+    const margin = rollResult - dc;
+    
+    return {
+      success: success,
+      rollResult: rollResult,
+      dc: dc,
+      margin: margin,
+      skillType: skillType,
+      message: success 
+        ? `${skillType} check succeeded! (${rollResult} vs DC ${dc}, margin: +${margin})`
+        : `${skillType} check failed. (${rollResult} vs DC ${dc}, margin: ${margin})`
+    };
+  }
+
+  // Handle trap detection attempt
+  function handleDetectionAttempt(characterToken, trapToken, rollResult = null) {
+    const result = performSkillCheck(characterToken, trapToken, 'Perception', rollResult);
+    
+    if (result.success && rollResult !== null) {
+      // Character successfully detected the trap
+      const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+      if (legacyUtils && typeof legacyUtils.updateTrapAura === 'function') {
+        legacyUtils.updateTrapAura(trapToken, { isDetected: true });
+      }
+      
+      TrapUtils.log(`${characterToken.get('name')} detected a trap!`, 'success');
+      return { ...result, detected: true };
+    }
+    
+    return { ...result, detected: false };
+  }
+
+  // Handle trap disarm attempt
+  function handleDisarmAttempt(characterToken, trapToken, rollResult = null) {
+    const result = performSkillCheck(characterToken, trapToken, 'Sleight of Hand', rollResult);
+    
+    if (result.success && rollResult !== null) {
+      // Character successfully disarmed the trap
+      const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+      if (legacyUtils && typeof legacyUtils.toggleTrap === 'function') {
+        legacyUtils.toggleTrap(trapToken); // Disarm the trap
+      }
+      
+      TrapUtils.log(`${characterToken.get('name')} disarmed the trap!`, 'success');
+      return { ...result, disarmed: true };
+    } else if (rollResult !== null && result.margin < -5) {
+      // Critical failure - trigger the trap
+      TrapUtils.log(`${characterToken.get('name')} triggered the trap while trying to disarm it!`, 'warning');
+      
+      const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+      if (legacyUtils && typeof legacyUtils.triggerTrap === 'function') {
+        legacyUtils.triggerTrap(trapToken, characterToken);
+      }
+      
+      return { ...result, triggered: true };
+    }
+    
+    return { ...result, disarmed: false, triggered: false };
+  }
+
+  // Get nearby characters for interaction
+  function getNearbyCharacters(trapToken, maxDistance = 30) {
+    if (!trapToken) return [];
+    
+    const pageId = trapToken.get('_pageid');
+    const allTokens = findObjs({ _type: 'graphic', _pageid: pageId });
+    
+    return allTokens.filter(token => {
+      // Filter for character tokens (have represents field)
+      if (!token.get('represents')) return false;
+      
+      // Check distance
+      const distance = TrapUtils.geometry.calculateTokenDistance(trapToken, token);
+      return distance.mapUnitDistance <= maxDistance;
+    });
+  }
+
+  // Build and send interaction menu
+  function showInteractionMenu(trapToken, characterTokens = null) {
+    if (!trapToken) {
+      TrapUtils.log('No trap token provided for interaction menu', 'error');
+      return;
+    }
+    
+    const nearbyChars = characterTokens || getNearbyCharacters(trapToken);
+    
+    // Import ui system dynamically to avoid circular imports
+    const uiSystem = globalThis.TrapSystem && globalThis.TrapSystem.ui;
+    if (uiSystem && typeof uiSystem.buildInteractionMenu === 'function') {
+      const menu = uiSystem.buildInteractionMenu(trapToken, nearbyChars);
+      if (menu) {
+        uiSystem.sendGM(menu);
+      }
+    } else {
+      TrapUtils.log('UI system not available for interaction menu', 'error');
+    }
+  }
+
+  // Process interaction command
+  function processInteractionCommand(command, args = []) {
+    if (!TrapUtils.validateCommandArgs(args, 1, command)) return;
+    
+    const tokenId = args[0];
+    const token = getObj('graphic', tokenId);
+    
+    if (!token) {
+      TrapUtils.log(`Token ${tokenId} not found`, 'error');
+      return;
+    }
+    
+    switch (command.toLowerCase()) {
+      case 'perception-check':
+      case 'detect':
+        if (args.length >= 2) {
+          const trapId = args[1];
+          const trapToken = getObj('graphic', trapId);
+          if (trapToken) {
+            const result = handleDetectionAttempt(token, trapToken);
+            TrapUtils.log(result.message, result.success ? 'success' : 'info');
+          }
+        }
+        break;
+        
+      case 'disable-check':
+      case 'disarm':
+        if (args.length >= 2) {
+          const trapId = args[1];
+          const trapToken = getObj('graphic', trapId);
+          if (trapToken) {
+            const result = handleDisarmAttempt(token, trapToken);
+            TrapUtils.log(result.message, result.success ? 'success' : 'warning');
+          }
+        }
+        break;
+        
+      case 'interact':
+        if (TrapUtils.isTrap(token)) {
+          showInteractionMenu(token);
+        } else {
+          TrapUtils.log('Selected token is not a trap', 'error');
+        }
+        break;
+        
+      default:
+        TrapUtils.log(`Unknown interaction command: ${command}`, 'error');
+    }
+  }
+
+  const interaction = {
+    performSkillCheck,
+    handleDetectionAttempt,
+    handleDisarmAttempt,
+    getNearbyCharacters,
+    showInteractionMenu,
+    processInteractionCommand
+  };
+
+  // src/trap-macros.js
+  // Macro execution & export logic
+
+
+  // Build a tag-to-ID mapping for macro placeholder replacement
+  function buildTagToIdMap(tokens = []) {
+    const tagMap = {};
+    tokens.forEach(token => {
+      if (!token) return;
+      const name = token.get('name') || '';
+      if (name.trim()) {
+        const tag = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (tag) tagMap[tag] = token.id;
+      }
+    });
+    return tagMap;
+  }
+
+  // Replace macro placeholders with actual token IDs
+  function replaceMacroPlaceholdersWithTags(macroString, tagMap = {}) {
+    if (!macroString || typeof macroString !== 'string') return macroString;
+    
+    let processed = macroString;
+    
+    // Replace @{target|...} patterns
+    processed = processed.replace(/@\{target\|([^}]+)\}/g, (match, property) => {
+      return `@{target|${property}}`;
+    });
+    
+    // Replace @{selected|...} patterns  
+    processed = processed.replace(/@\{selected\|([^}]+)\}/g, (match, property) => {
+      return `@{selected|${property}}`;
+    });
+    
+    // Replace custom tags like @{goblin|token_id}
+    Object.keys(tagMap).forEach(tag => {
+      const regex = new RegExp(`@\\{${tag}\\|([^}]+)\\}`, 'gi');
+      processed = processed.replace(regex, (match, property) => {
+        if (property === 'token_id') {
+          return tagMap[tag];
+        }
+        return `@{${tagMap[tag]}|${property}}`;
+      });
+    });
+    
+    return processed;
+  }
+
+  // Execute a macro string (delegates to Roll20's sendChat)
+  function executeMacro(macroString, characterName = 'TrapSystem') {
+    if (!macroString || typeof macroString !== 'string') {
+      TrapUtils.log('Cannot execute empty macro', 'error');
+      return false;
+    }
+    
+    try {
+      // Handle different macro types
+      if (macroString.startsWith('#')) {
+        // Roll20 macro - remove # and execute
+        const macroName = macroString.slice(1);
+        sendChat(characterName, `#${macroName}`);
+      } else if (macroString.startsWith('!')) {
+        // API command
+        sendChat(characterName, macroString);
+      } else if (macroString.startsWith('&{')) {
+        // Roll template
+        sendChat(characterName, macroString);
+      } else {
+        // Regular chat message
+        sendChat(characterName, macroString);
+      }
+      
+      TrapUtils.log(`Executed macro: ${TrapUtils.getSafeMacroDisplayName(macroString)}`, 'success');
+      return true;
+    } catch (error) {
+      TrapUtils.log(`Macro execution failed: ${error.message}`, 'error');
+      return false;
+    }
+  }
+
+  // Process and execute trap macros with token context
+  function executeTrapMacros(trapToken, macroList = [], targetTokens = []) {
+    if (!trapToken || !Array.isArray(macroList)) return;
+    
+    const tagMap = buildTagToIdMap([trapToken, ...targetTokens]);
+    
+    macroList.forEach((macro, index) => {
+      if (!macro) return;
+      
+      const processedMacro = replaceMacroPlaceholdersWithTags(macro, tagMap);
+      
+      // Add a small delay between macros to prevent spam
+      setTimeout(() => {
+        executeMacro(processedMacro, trapToken.get('name') || 'Trap');
+      }, index * 100);
+    });
+  }
+
+  // Export trap configuration as a macro
+  function exportTrapAsMacro(trapToken) {
+    if (!TrapUtils.validateTrapToken(trapToken, 'exportTrapAsMacro')) return null;
+    
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
+      TrapUtils.log('Legacy utilities not available for export', 'error');
+      return null;
+    }
+    
+    const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+    if (!trapData) {
+      TrapUtils.log('Invalid trap configuration for export', 'error');
+      return null;
+    }
+    
+    // Generate macro command to recreate this trap
+    const macroCommand = `!trapsystem create-trap --name "${trapData.name || 'Exported Trap'}" --trigger "${trapData.triggerType || 'movement'}" --dc ${trapData.dc || 15}`;
+    
+    return {
+      name: `Create: ${trapData.name || 'Trap'}`,
+      command: macroCommand,
+      description: `Creates a trap: ${trapData.name || 'Unnamed'}`
+    };
+  }
+
+  // Batch export multiple traps
+  function exportMultipleTraps(trapTokens = []) {
+    const exports = [];
+    
+    trapTokens.forEach(token => {
+      const exported = exportTrapAsMacro(token);
+      if (exported) exports.push(exported);
+    });
+    
+    return exports;
+  }
+
+  const macros = {
+    buildTagToIdMap,
+    replaceMacroPlaceholdersWithTags,
+    executeMacro,
+    executeTrapMacros,
+    exportTrapAsMacro,
+    exportMultipleTraps
+  };
+
+  // src/trap-ui.js
+  // Chat/menu rendering utilities.
+
+
+  function buildDefaultTemplate(sections) {
+    // sections: array of strings already formatted like "name=..." or "Token=..."
+    return `&{template:default} {{${sections.join('}} {{')}}}`;
+  }
+
+  function sendGM(menuString) {
+    TrapUtils.chat(menuString);
+  }
+
+  // Build a trap status menu with current configuration
+  function buildTrapStatusMenu(trapToken) {
+    if (!trapToken) return null;
+    
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
+      return 'Legacy utilities not available';
+    }
+    
+    const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+    if (!trapData) return 'Invalid trap configuration';
+    
+    const tokenImage = TrapUtils.getTokenImageURL(trapToken, 'thumb');
+    const statusEmoji = trapData.isArmed ? '🔴' : '🟢';
+    const usesText = trapData.currentUses > 0 ? `${trapData.currentUses}/${trapData.maxUses}` : 'Depleted';
+    
+    const sections = [
+      `name=${statusEmoji} ${trapData.name || 'Unnamed Trap'}`,
+      `Token=<img src="${tokenImage}" style="width:40px;height:40px;">`,
+      `Status=${trapData.isArmed ? 'Armed' : 'Disarmed'}`,
+      `Uses=${usesText}`,
+      `DC=${trapData.dc || 'N/A'}`,
+      `Type=${trapData.triggerType || 'Unknown'}`,
+      `Actions=[Toggle](!trapsystem toggle @{selected|token_id}) [Edit](!trapsystem edit @{selected|token_id})`
+    ];
+    
+    return buildDefaultTemplate(sections);
+  }
+
+  // Build a skill check menu
+  function buildSkillCheckMenu(characterToken, trapToken, skillType = 'Investigation') {
+    if (!characterToken || !trapToken) return null;
+    
+    const charImage = TrapUtils.getTokenImageURL(characterToken, 'thumb');
+    const trapImage = TrapUtils.getTokenImageURL(trapToken, 'thumb');
+    const skillEmoji = Config.SKILL_TYPES[skillType] || '🎲';
+    
+    const sections = [
+      `name=${skillEmoji} ${skillType} Check`,
+      `Character=<img src="${charImage}" style="width:30px;height:30px;"> ${characterToken.get('name')}`,
+      `Target=<img src="${trapImage}" style="width:30px;height:30px;"> Trap`,
+      `Roll=[${skillType}](!roll 1d20+@{selected|${skillType.toLowerCase()}_mod} vs DC ?{DC|15})`,
+      `Actions=[Auto-Resolve](!trapsystem skill-check ${characterToken.id} ${trapToken.id} ${skillType})`
+    ];
+    
+    return buildDefaultTemplate(sections);
+  }
+
+  // Build an interaction menu for a trap
+  function buildInteractionMenu(trapToken, characterTokens = []) {
+    if (!trapToken) return null;
+    
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
+      return 'Legacy utilities not available';
+    }
+    
+    const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+    if (!trapData) return 'Invalid trap configuration';
+    
+    const trapImage = TrapUtils.getTokenImageURL(trapToken, 'thumb');
+    const statusEmoji = trapData.isArmed ? '🔴' : '🟢';
+    
+    const characterList = characterTokens.map(token => 
+      `<img src="${TrapUtils.getTokenImageURL(token, 'thumb')}" style="width:20px;height:20px;"> ${token.get('name')}`
+    ).join('<br>');
+    
+    const sections = [
+      `name=${statusEmoji} Trap Interaction`,
+      `Trap=<img src="${trapImage}" style="width:40px;height:40px;"> ${trapData.name || 'Unnamed'}`,
+      `Characters=${characterList || 'None nearby'}`,
+      `Detection=[Perception Check](!trapsystem perception-check @{selected|token_id} ${trapToken.id})`,
+      `Disarm=[Disable Check](!trapsystem disable-check @{selected|token_id} ${trapToken.id})`,
+      `Actions=[Trigger Manually](!trapsystem trigger ${trapToken.id}) [Reset](!trapsystem reset ${trapToken.id})`
+    ];
+    
+    return buildDefaultTemplate(sections);
+  }
+
+  // Send a formatted error message
+  function sendError(message, recipient = 'gm') {
+    const errorMsg = `❌ **Error:** ${message}`;
+    if (recipient === 'gm') {
+      TrapUtils.chat(errorMsg);
+    } else {
+      TrapUtils.whisper(recipient, errorMsg);
+    }
+  }
+
+  // Send a formatted success message
+  function sendSuccess(message, recipient = 'gm') {
+    const successMsg = `✅ **Success:** ${message}`;
+    if (recipient === 'gm') {
+      TrapUtils.chat(successMsg);
+    } else {
+      TrapUtils.whisper(recipient, successMsg);
+    }
+  }
+
+  // Send a formatted info message
+  function sendInfo(message, recipient = 'gm') {
+    const infoMsg = `ℹ️ **Info:** ${message}`;
+    if (recipient === 'gm') {
+      TrapUtils.chat(infoMsg);
+    } else {
+      TrapUtils.whisper(recipient, infoMsg);
+    }
+  }
+
+  const ui = {
+    buildDefaultTemplate,
+    sendGM,
+    buildTrapStatusMenu,
+    buildSkillCheckMenu,
+    buildInteractionMenu,
+    sendError,
+    sendSuccess,
+    sendInfo
+  };
+
   // src/trap-detector.js
   // Migration of movement-based detection helpers.
 
@@ -437,10 +1009,13 @@ var TrapSystem = (function (exports) {
     state: State,
     // Namespaces to be wired up in later phases
     core: { Config, State },
-    detection: detector,
-    interaction: {},
-    macros: {},
-    ui: {}
+    detection: {
+      movement: detector,
+      passive: detection
+    },
+    interaction: interaction,
+    macros: macros,
+    ui: ui
   };
 
   // Expose globally so Roll20 can see it after bundling.

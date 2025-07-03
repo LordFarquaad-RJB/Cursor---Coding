@@ -7,11 +7,12 @@ import { Config, State } from './trap-core.js';
 // Placeholder imports – these modules will gradually be filled out.
 import './trap-core.js';
 import './trap-detection.js';
-import './trap-interaction.js';
-import './trap-macros.js';
-import './trap-ui.js';
+import { interaction as interactionSystem } from './trap-interaction.js';
+import { macros as macroSystem } from './trap-macros.js';
+import { ui as uiSystem } from './trap-ui.js';
 import './trap-triggers.js';
 import { detector } from './trap-detector.js';
+import { detection as passiveDetection } from './trap-detection.js';
 
 const TrapSystem = {
   utils: TrapUtils,
@@ -19,10 +20,13 @@ const TrapSystem = {
   state: State,
   // Namespaces to be wired up in later phases
   core: { Config, State },
-  detection: detector,
-  interaction: {},
-  macros: {},
-  ui: {}
+  detection: {
+    movement: detector,
+    passive: passiveDetection
+  },
+  interaction: interactionSystem,
+  macros: macroSystem,
+  ui: uiSystem
 };
 
 // Expose globally so Roll20 can see it after bundling.
