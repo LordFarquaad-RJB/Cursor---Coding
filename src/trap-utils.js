@@ -289,3 +289,24 @@ TrapUtils.geometry = {
   getTokenGridCoords,
   calculateTokenDistance
 };
+
+function getSafeMacroDisplayName(macroString, maxLength = 25) {
+  if (!macroString || typeof macroString !== 'string') return '(DE)';
+  let display = macroString.trim();
+  // Macro
+  if (display.startsWith('#')) return `Macro: ${display.slice(1)}`;
+  // API command disguised with $ or true !
+  if (display.startsWith('$')) display = `Cmd: !${display.slice(1)}`;
+  else if (display.startsWith('!')) display = `Cmd: ${display}`;
+  // Template
+  else if (display.startsWith('&{')) {
+    const nameMatch = display.match(/\{\{name=([^}]+)\}\}/);
+    return nameMatch ? `Template: "${nameMatch[1].trim()}"` : 'Chat Template';
+  } else {
+    display = `Text: "${display}"`;
+  }
+  if (display.length > maxLength) return display.slice(0, maxLength - 3) + '...';
+  return display;
+}
+
+TrapUtils.getSafeMacroDisplayName = getSafeMacroDisplayName;
