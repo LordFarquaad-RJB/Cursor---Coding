@@ -15,11 +15,10 @@
  * [TAG: DB_15_Normalize_Price_Data_in_an_Item] - Not Required (duplicate of DB_9)
  * [TAG: DB_16_Normalize_All_Prices_in_the_Database] - Not Required (duplicate of DB_10)
  * [TAG: DB_27_Normalize_All_Prices_in_the_Database] - Not Required (duplicate functionality)
- */
-
-/* Configuration and Constants
+ *
+ * Configuration and Constants
  * [TAG: MG_DB_2_SHOP_2_Configuration_and_Constants]
- */
+ **/
 const CONFIG = {
         version: '1.0.0',
         debug: false,
