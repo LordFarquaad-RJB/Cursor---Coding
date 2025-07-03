@@ -557,3 +557,53 @@ Object.assign(TrapUtils, {
   calculateDynamicAuraRadius,
   updateTrapUses
 });
+
+// ------------------------------------------------------------------
+// Token management helpers
+// ------------------------------------------------------------------
+
+export function toggleIgnoreTraps(token) {
+  if (!token) {
+    log('No token provided for ignoretraps toggle', 'error');
+    return;
+  }
+
+  const currentMarkers = token.get("statusmarkers") || "";
+  const hasBlueMarker = currentMarkers.includes("blue");
+  
+  let notes = token.get("gmnotes") || "";
+  let decoded = notes;
+  try { 
+    decoded = decodeURIComponent(notes); 
+  } catch (e) { 
+    // Use raw notes if decoding fails
+  }
+  
+  const hasIgnoreTag = decoded.includes("{ignoretraps}");
+  
+  if (hasBlueMarker && hasIgnoreTag) {
+    // Remove both marker and tag
+    const newMarkers = currentMarkers.replace(/blue,?|,blue/g, '').replace(/,$/, '');
+    const newNotes = decoded.replace(/\{ignoretraps\}/g, '');
+    
+    token.set({
+      statusmarkers: newMarkers,
+      gmnotes: encodeURIComponent(newNotes)
+    });
+    
+    chat(`${token.get("name") || "Token"} is no longer immune to traps.`);
+    log(`Removed trap immunity from token ${token.id}`, 'info');
+  } else {
+    // Add both marker and tag
+    const newMarkers = hasBlueMarker ? currentMarkers : (currentMarkers ? currentMarkers + ",blue" : "blue");
+    const newNotes = hasIgnoreTag ? decoded : decoded + "{ignoretraps}";
+    
+    token.set({
+      statusmarkers: newMarkers,
+      gmnotes: encodeURIComponent(newNotes)
+    });
+    
+    chat(`${token.get("name") || "Token"} is now immune to traps.`);
+    log(`Added trap immunity to token ${token.id}`, 'info');
+  }
+}

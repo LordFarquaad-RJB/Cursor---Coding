@@ -589,6 +589,379 @@ export const PassiveDetection = {
             : "👁️ All detection auras are now restored.";
 
         TrapUtils.whisper(playerId, message);
+    },
+
+    /**
+     * Show the passive detection setup menu
+     * @param {object} trapToken - The trap token to configure
+     * @param {string} playerId - Player ID for messaging
+     * @param {object} providedTrapData - Optional pre-parsed trap data
+     */
+    showPassiveSetupMenu(trapToken, playerId, providedTrapData = null) {
+        if (!trapToken) {
+            TrapUtils.chat("❌ No trap token selected for passive setup.", playerId);
+            return;
+        }
+
+        const trapConfig = providedTrapData || TrapUtils.parseTrapNotes(trapToken.get("gmnotes")) || {};
+
+        const currentDC = trapConfig.passiveSpotDC || 10;
+        const currentRange = trapConfig.passiveMaxRange || 0;
+        const currentTokenBar = trapConfig.ppTokenBarFallback || "none";
+        const currentLuckRoll = trapConfig.enableLuckRoll || false;
+        const currentLuckDie = trapConfig.luckRollDie || "1d6";
+        const currentShowAura = trapConfig.showDetectionAura || false;
+        const isPassiveEnabled = trapConfig.passiveEnabled === false ? false : true;
+
+        const PLAYER_MSG_TEMPLATE_NAME = Config.messages.templates.PLAYER_ALERT;
+        const PLAYER_MSG_PREFIX = `&{template:default} {{name=${PLAYER_MSG_TEMPLATE_NAME}}} {{message=`;
+        const GM_MSG_TEMPLATE_NAME = Config.messages.templates.GM_SPOT;
+        const GM_MSG_PREFIX = `&{template:default} {{name=${GM_MSG_TEMPLATE_NAME}}} {{message=`;
+        const MSG_SUFFIX = "}}";
+
+        const defaultPlayerMsgContent = Config.messages.defaults.playerNotice;
+        const defaultGmMsgContent = Config.messages.defaults.gmNotice;
+
+        // Helper to clean internal backslashes like {placeholder\\} to {placeholder}
+        const cleanInternalPlaceholderEscapes = (text) => {
+            if (typeof text !== 'string') return text;
+            return text.replace(/\\{(\w+)\\\\\\/g, '{$1}');
+        };
+
+        const extractMessageContent = (fullStoredMsg, prefix, suffix, defaultContent) => {
+            let extractedContent = defaultContent; 
+
+            if (typeof fullStoredMsg === 'string') {
+                if (fullStoredMsg.startsWith(prefix) && fullStoredMsg.endsWith(suffix)) {
+                    extractedContent = fullStoredMsg.substring(prefix.length, fullStoredMsg.length - suffix.length);
+                } else { 
+                    extractedContent = fullStoredMsg; 
+                }
+
+                const pipeIndex = extractedContent.indexOf('|');
+                if (pipeIndex !== -1) {
+                    let part1 = extractedContent.substring(0, pipeIndex);
+                    let part2 = extractedContent.substring(pipeIndex + 1);
+                    
+                    let cleanedPart1 = cleanInternalPlaceholderEscapes(part1);
+                    let cleanedPart2 = cleanInternalPlaceholderEscapes(part2);
+
+                    if (cleanedPart1 === cleanedPart2) { 
+                        TrapUtils.log(`[DEBUG] extractMessageContent: Duplicated content (after cleaning internal \\): "${cleanedPart1}". Using cleaned first part.`, 'debug');
+                        extractedContent = cleanedPart1; 
+                    } else {
+                         TrapUtils.log(`[DEBUG] extractMessageContent: Pipe found, but parts differ after cleaning. P1_cleaned: "${cleanedPart1}", P2_cleaned: "${cleanedPart2}". Keeping original and cleaning it: "${extractedContent}"`, 'debug');
+                         extractedContent = cleanInternalPlaceholderEscapes(extractedContent);
+                    }
+                } else {
+                    extractedContent = cleanInternalPlaceholderEscapes(extractedContent);
+                }
+            }
+            return extractedContent;
+        };
+        
+        let currentPlayerMsgContent = extractMessageContent(trapConfig.passiveNoticePlayer, PLAYER_MSG_PREFIX, MSG_SUFFIX, defaultPlayerMsgContent);
+        let currentGmMsgContent = extractMessageContent(trapConfig.passiveNoticeGM, GM_MSG_PREFIX, MSG_SUFFIX, defaultGmMsgContent);
+        
+        const getSafeQueryDefault = (content) => {
+            return content.replace(/\|/g, '##PIPE##') 
+                          .replace(/\}/g, '##RBRACE##') 
+                          .replace(/\{/g, '##LBRACE##')
+                          .replace(/\?/g, '##QMARK##') 
+                          .replace(/"/g, '##DQUOTE##')  
+                          .replace(/\)/g, '##RPAREN##') 
+                          .replace(/\(/g, '##LPAREN##'); 
+        };
+
+        const playerMsgQueryDefault = getSafeQueryDefault(currentPlayerMsgContent);
+        const gmMsgQueryDefault = getSafeQueryDefault(currentGmMsgContent);
+
+        const sanitizeForMenuPreview = (str, maxLength = 35) => {
+            if (!str) return "(Not Set)";
+            let preview = str.replace(/&{template:[^}]+}/g, "").replace(/{{[^}]+}}/g, " [...] ");
+            preview = preview.replace(/<[^>]+>/g, ""); 
+            preview = preview.replace(/\[([^\]]*)\]\(([^)]*)\)/g, "$1"); 
+            preview = preview.trim();
+            if (preview.length > maxLength) preview = preview.substring(0, maxLength - 3) + "...";
+            return preview.replace(/&/g, '&amp;').replace(/{/g, '&#123;').replace(/}/g, '&#125;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        };
+
+        const playerMsgPreview = sanitizeForMenuPreview(currentPlayerMsgContent);
+        const gmMsgPreview = sanitizeForMenuPreview(currentGmMsgContent);
+
+        // Build placeholder help text
+        const placeholderHelp = Object.entries(Config.messages.placeholders)
+            .map(([key, desc]) => `- {${key}}: ${desc}`)
+            .join("\n");
+
+        const debounceTimeSeconds = (Config.messages.passiveNoticeDebounceTime || 100000) / 1000;
+
+        const menu = [
+            "&{template:default}",
+            `{{name=🛠️ Passive Setup: ${trapToken.get('name') || 'Unnamed Trap'}}}`,
+            `{{Current DC=${currentDC}}}`,
+            `{{Current Range from center=${currentRange}ft (0 for none)}}`,
+            `{{Detection Aura=${currentShowAura ? 'Enabled' : 'Disabled'}}}`,
+            `{{PC Msg Content=${playerMsgPreview}}}`,
+            `{{GM Msg Content=${gmMsgPreview}}}`,
+            `{{Token Fallback=${currentTokenBar}}}`,
+            `{{Luck Roll=${currentLuckRoll ? 'Enabled' : 'Disabled'}}}`,
+            `{{Luck Die=${currentLuckDie}}}`,
+            "{{Actions=",
+            `[Set Trap DC](!trapsystem setpassive dc ${trapToken.id} ?{DC|${currentDC}})`,
+            `[Set Range](!trapsystem setpassive range ${trapToken.id} ?{Range ft from Center - 0 for none|${currentRange}})`,
+            `[Set PC Msg](!trapsystem setpassive playermsg ${trapToken.id} ?{Player Message with {placeholders}|${playerMsgQueryDefault}})`,
+            `[Set GM Msg](!trapsystem setpassive gmmsg ${trapToken.id} ?{GM Message with {placeholders}|${gmMsgQueryDefault}})`,
+            `[Toggle Luck](!trapsystem setpassive luckroll ${trapToken.id} ${!currentLuckRoll})`,
+            `[Set Luck 🎲](!trapsystem setpassive luckdie ${trapToken.id} ?{Luck Die - e.g., 1d6|${currentLuckDie}})`,
+            `[Toggle Detection Range Aura](!trapsystem setpassive showaura ${trapToken.id} ${!currentShowAura})`,
+            `[Toggle Passive](!trapsystem setpassive toggle ${trapToken.id})`,
+            `[Set TokenBar](!trapsystem setpassive tokenbar ${trapToken.id} ?{Token Bar Fallback - e.g., bar1|bar1 🟢|bar2 🔵|bar3 🔴|none})`,
+            "}}",
+            "{{⚠️ Notes=",
+            "- For custom messages, please avoid using emojis. Your message will be wrapped in a standard alert template which may not display emojis correctly.\n",
+            `- Player alerts for identical messages are debounced. If the same alert is triggered for the same character within ${debounceTimeSeconds} seconds, it will be suppressed for that player (GM alerts are not debounced), note distance placeholders will not be treated as identical messages.`,
+            "}}",
+            `{{⚠️ Help=Available placeholders: \n ${placeholderHelp}}}`
+        ];
+        TrapUtils.chat(menu.join(" "), playerId);
+    },
+
+    /**
+     * Handle setting passive detection properties
+     * @param {Array} commandParams - Command parameters [property, trapId, ...values]
+     * @param {string} playerId - Player ID for messaging
+     */
+    handleSetPassiveProperty(commandParams, playerId) {
+        TrapUtils.log(`[DEBUG] handleSetPassiveProperty received commandParams: ${JSON.stringify(commandParams)}`, 'debug');
+
+        const tempUnescape = (s) => {
+            if (typeof s !== 'string') return s;
+            let temp = s;
+            temp = temp.replace(/##PIPE##/g, "|")
+                       .replace(/##RBRACE##/g, "}")
+                       .replace(/##LBRACE##/g, "{")
+                       .replace(/##QMARK##/g, "?")
+                       .replace(/##DQUOTE##/g, '"')
+                       .replace(/##RPAREN##/g, ")")
+                       .replace(/##LPAREN##/g, "(");
+            return temp;
+        };
+
+        if (commandParams.length < 2) {
+            TrapUtils.chat("❌ Insufficient arguments for setpassive. Expected: property trapId [value]", playerId);
+            return;
+        }
+
+        const property = commandParams[0].toLowerCase();
+        const trapId = commandParams[1];
+        let rawValueFromArgs = commandParams.length > 2 ? commandParams.slice(2).join(" ") : "";
+        let finalValueToStore = rawValueFromArgs;
+
+        const trapToken = getObj("graphic", trapId);
+        if (!trapToken) {
+            TrapUtils.chat(`❌ Trap token with ID ${trapId} not found.`, playerId);
+            return;
+        }
+
+        let trapData = TrapUtils.parseTrapNotes(trapToken.get("gmnotes"));
+        
+        if (trapData) {
+            TrapUtils.log(`[DEBUG] HPSP: trapData directly from parseTrapNotes: passiveNoticeGM='${trapData.passiveNoticeGM}', passiveNoticePlayer='${trapData.passiveNoticePlayer}', passiveSpotDC='${trapData.passiveSpotDC}'`, 'debug');
+        } else {
+            TrapUtils.log(`[DEBUG] HPSP: parseTrapNotes returned null. Will initialize new trapData.`, 'debug');
+        }
+
+        if (!trapData) {
+            TrapUtils.log(`No valid trap data found for ${trapId} or notes empty/malformed. Initializing new trapData for passive setup.`, 'warn');
+            trapData = {
+                type: "standard", currentUses: 0, maxUses: 0, isArmed: true,
+                primaryMacro: null, options: [], successMacro: null, failureMacro: null,
+                checks: [], movementTrigger: true, autoTrigger: false, position: "intersection",
+                passiveSpotDC: null, passiveMaxRange: null, passiveNoticePlayer: null,
+                passiveNoticeGM: null, ppTokenBarFallback: null, showDetectionAura: false,
+                enableLuckRoll: false, luckRollDie: "1d6",
+                rawTriggerBlock: null, rawDetectionBlock: null
+            };
+        }
+        
+        if (property === "playermsg" || property === "gmmsg") {
+            let unescapedFullRawInput = tempUnescape(rawValueFromArgs);
+            TrapUtils.log(`[DEBUG] HPSP: Unescaped input for ${property}: "${unescapedFullRawInput}"`, 'debug');
+            finalValueToStore = unescapedFullRawInput;
+
+            const pipeIndex = finalValueToStore.indexOf('|');
+            if (pipeIndex !== -1) {
+                finalValueToStore = finalValueToStore.substring(0, pipeIndex);
+                TrapUtils.log(`[DEBUG] HPSP: Truncated message at pipe. Storing: "${finalValueToStore}"`, 'debug');
+            }
+        }
+
+        const propToStoreOnTrapData = property === 'dc' ? 'passiveSpotDC' :
+                                      property === 'range' ? 'passiveMaxRange' :
+                                      property === 'playermsg' ? 'passiveNoticePlayer' :
+                                      property === 'gmmsg' ? 'passiveNoticeGM' :
+                                      property === 'tokenbar' ? 'ppTokenBarFallback' :
+                                      property === 'luckroll' ? 'enableLuckRoll' :
+                                      property === 'luckdie' ? 'luckRollDie' :
+                                      property === 'showaura' ? 'showDetectionAura' :
+                                      property === 'passiveenabled' ? 'passiveEnabled' : null;
+
+        let updateMade = false;
+
+        if (property === "toggle") {
+            const currentState = trapData.passiveEnabled === false ? false : true;
+            trapData.passiveEnabled = !currentState;
+            updateMade = true;
+            TrapUtils.log(`Toggled passive detection for trap ${trapId} to ${trapData.passiveEnabled ? 'on' : 'off'}.`, 'info');
+        } else if (propToStoreOnTrapData) {
+            let valueToSet = finalValueToStore;
+            if (property === "dc") {
+                const dcVal = parseInt(valueToSet, 10);
+                if (isNaN(dcVal) || dcVal < 0) { 
+                    TrapUtils.chat("❌ Invalid DC value. Must be a non-negative number.", playerId); 
+                    return; 
+                }
+                valueToSet = dcVal;
+                // Update token bar when DC is set
+                if (trapToken) {
+                    trapToken.set({
+                        bar2_value: dcVal,
+                        bar2_max: dcVal,
+                        showplayers_bar2: false
+                    });
+                }
+            } else if (property === "range") {
+                const rangeVal = parseFloat(valueToSet);
+                if (isNaN(rangeVal) || rangeVal < 0) { 
+                    TrapUtils.chat("❌ Invalid Range value. Must be a non-negative number.", playerId); 
+                    return; 
+                }
+                valueToSet = rangeVal;
+            } else if (property === "tokenbar") {
+                const parsedValue = String(valueToSet).split(' ')[0].trim();
+                valueToSet = (parsedValue.toLowerCase() === "none" || parsedValue === "") ? null : parsedValue;
+            } else if (property === "luckroll") {
+                valueToSet = String(valueToSet).toLowerCase() === "true";
+            } else if (property === "luckdie") {
+                if (!/^\d+d\d+$/i.test(valueToSet)) {
+                    TrapUtils.chat("❌ Invalid die format. Please use format like '1d6'.", playerId);
+                    return;
+                }
+                valueToSet = String(valueToSet).trim();
+            } else if (property === "showaura") {
+                valueToSet = String(valueToSet).toLowerCase() === "true";
+            }
+            
+            trapData[propToStoreOnTrapData] = valueToSet;
+            updateMade = true;
+            TrapUtils.log(`Set trapData.${propToStoreOnTrapData} = ${JSON.stringify(valueToSet)} for trap ${trapId}.`, 'debug');
+        } else {
+            TrapUtils.chat(`❌ Unknown passive property: ${property}. Use dc, range, playermsg, gmmsg, tokenbar, luckroll, luckdie, showaura, or toggle.`, playerId);
+            this.showPassiveSetupMenu(trapToken, playerId);
+            return;
+        }
+
+        if (updateMade) {
+            const newGmNotesString = this.constructGmNotesFromTrapData(trapData);
+            
+            try {
+                const encodedNewGmNotes = encodeURIComponent(newGmNotesString);
+                trapToken.set("gmnotes", encodedNewGmNotes);
+                TrapUtils.log(`Successfully updated GM notes for trap ${trapId}. New notes (raw): '${newGmNotesString}'`, 'info');
+                
+                // Re-parse to update visuals and get canonical data for menu refresh
+                const newlyParsedData = TrapUtils.parseTrapNotes(encodedNewGmNotes, trapToken);
+                this.updateAuraForDetectionRange(trapToken);
+                this.showPassiveSetupMenu(trapToken, playerId, newlyParsedData);
+
+            } catch (e) {
+                TrapUtils.log(`Error encoding or setting GM notes for trap ${trapId}: ${e.message}`, 'error');
+                TrapUtils.chat("❌ Error saving updated trap settings.", playerId);
+            }
+        } else {
+            this.showPassiveSetupMenu(trapToken, playerId, trapData);
+        }  
+    },
+
+    /**
+     * Construct GM notes from trap data
+     * @param {object} trapData - The trap data object
+     * @returns {string} - The formatted GM notes string
+     */
+    constructGmNotesFromTrapData(trapData) {
+        if (!trapData) return "";
+        TrapUtils.log(`[constructGmNotesFromTrapData] Input trapData: ${JSON.stringify(trapData).substring(0,200)}...`, 'debug');
+
+        // Helper to wrap values containing special characters in quotes
+        const formatValue = (value) => {
+            if (typeof value !== 'string') return value;
+            if (value.includes('[') || value.includes(']')) {
+                const escapedValue = value.replace(/"/g, '\\"');
+                return `"${escapedValue}"`;
+            }
+            return value;
+        };
+
+        let triggerSettings = [];
+        if (trapData.type) triggerSettings.push(`type:[${trapData.type}]`);
+        
+        if (trapData.maxUses !== undefined || trapData.currentUses !== undefined) {
+             triggerSettings.push(`uses:[${trapData.currentUses || 0}/${trapData.maxUses || 0}]`);
+        }
+    
+        triggerSettings.push(`armed:[${trapData.isArmed ? 'on' : 'off'}]`); 
+    
+        if (trapData.primaryMacro && trapData.primaryMacro.macro) triggerSettings.push(`primaryMacro:[${formatValue(trapData.primaryMacro.macro)}]`);
+        else if (trapData.primaryMacro && typeof trapData.primaryMacro === 'string') triggerSettings.push(`primaryMacro:[${formatValue(trapData.primaryMacro)}]`);
+
+        if (trapData.failureMacro) triggerSettings.push(`failureMacro:[${formatValue(trapData.failureMacro)}]`);
+        if (trapData.successMacro) triggerSettings.push(`successMacro:[${formatValue(trapData.successMacro)}]`);
+        
+        if (trapData.options && trapData.options.length > 0) {
+            const formattedOptions = trapData.options.map(opt => opt.macro || opt.name).join(';');
+            triggerSettings.push(`options:[${formattedOptions}]`);
+        }
+        
+        if (trapData.checks && trapData.checks.length > 0) {
+            const formattedChecks = trapData.checks.map(check => `${check.type}:${check.dc}`).join(';');
+            triggerSettings.push(`checks:[${formattedChecks}]`);
+        }
+        
+        if (trapData.position !== undefined) {
+            if (typeof trapData.position === 'object' && trapData.position.x !== undefined && trapData.position.y !== undefined) {
+                triggerSettings.push(`position:[${trapData.position.x},${trapData.position.y}]`);
+            } else {
+                triggerSettings.push(`position:[${trapData.position}]`);
+            }
+        }
+        
+        if (trapData.movementTrigger !== undefined) triggerSettings.push(`movementTrigger:[${trapData.movementTrigger ? 'on' : 'off'}]`);
+        if (trapData.autoTrigger !== undefined) triggerSettings.push(`autoTrigger:[${trapData.autoTrigger ? 'on' : 'off'}]`);
+
+        let detectionSettings = [];
+        if (trapData.passiveSpotDC !== undefined && trapData.passiveSpotDC !== null) detectionSettings.push(`passiveSpotDC:[${trapData.passiveSpotDC}]`);
+        if (trapData.passiveMaxRange !== undefined && trapData.passiveMaxRange !== null) detectionSettings.push(`passiveMaxRange:[${trapData.passiveMaxRange}]`);
+        if (trapData.passiveNoticePlayer) detectionSettings.push(`passiveNoticePlayer:[${formatValue(trapData.passiveNoticePlayer)}]`);
+        if (trapData.passiveNoticeGM) detectionSettings.push(`passiveNoticeGM:[${formatValue(trapData.passiveNoticeGM)}]`);
+        if (trapData.ppTokenBarFallback) detectionSettings.push(`ppTokenBarFallback:[${trapData.ppTokenBarFallback}]`);
+        if (trapData.enableLuckRoll !== undefined) detectionSettings.push(`enableLuckRoll:[${trapData.enableLuckRoll}]`);
+        if (trapData.luckRollDie) detectionSettings.push(`luckRollDie:[${trapData.luckRollDie}]`);
+        if (trapData.showDetectionAura !== undefined) detectionSettings.push(`showDetectionAura:[${trapData.showDetectionAura}]`);
+        if (trapData.passiveEnabled !== undefined) detectionSettings.push(`passiveEnabled:[${trapData.passiveEnabled ? 'on' : 'off'}]`);
+        if (trapData.detected !== undefined) detectionSettings.push(`detected:[${trapData.detected ? 'on' : 'off'}]`);
+
+        let result = '';
+        if (triggerSettings.length > 0) {
+            result += `{!traptrigger ${triggerSettings.join(' ')}}`;
+        }
+        if (detectionSettings.length > 0) {
+            if (result) result += ' ';
+            result += `{!trapdetection ${detectionSettings.join(' ')}}`;
+        }
+
+        TrapUtils.log(`[constructGmNotesFromTrapData] Generated notes: ${result}`, 'debug');
+        return result;
     }
 };
 
