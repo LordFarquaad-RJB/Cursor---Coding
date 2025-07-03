@@ -61,10 +61,11 @@ const LightControl = {
                 "&nbsp;&nbsp;• Example: <code>!wall -Mxyz123 moveLeft 70 2</code><br>" +
                 "&nbsp;&nbsp;• <b>Note:</b> Wall movement messages can be disabled via <code>config.VERBOSE_WALL_MOVEMENTS</code><br><br>" +
                 "<b>!door</b> (Native Door/Window objects)<br>" +
-                "• <code>!door [ID|all_on_page|area shape dimension action] [action]</code><br>" +
+                "• <code>!door [ID1] [ID2...] &lt;action&gt;</code><br>" +
                 "&nbsp;&nbsp;• Actions: <code>open</code>, <code>close</code>, <code>lock</code>, <code>unlock</code>, <code>reveal</code>, <code>set_secret_true</code><br>" +
                 "&nbsp;&nbsp;• Area Ops: <code>!door area square &lt;grids&gt; &lt;action&gt;</code> or <code>!door area circle &lt;grids&gt; &lt;action&gt;</code><br>" +
-                "&nbsp;&nbsp;• Example (single): <code>!door -Mabc456 open</code><br><br>" +
+                "&nbsp;&nbsp;• Example (single): <code>!door -Mabc456 open</code><br>" +
+                "&nbsp;&nbsp;• Example (multiple): <code>!door -Mabc456 -Mdef789 close</code><br>" +
                 "&nbsp;&nbsp;• Example (page): <code>!door all_on_page lock</code><br>" +
                 "&nbsp;&nbsp;• Example (area): <code>!door area square 5 open</code><br>" +
                 "&nbsp;&nbsp;• <b>Note:</b> Door operation messages can be disabled via <code>config.VERBOSE_DOOR_OPERATIONS</code>}}",
@@ -195,11 +196,45 @@ const LightControl = {
                 
                 this.processAreaDoorCommand(shape, dimension, action, selectedGraphics, playerid);
             }
-            else { // Assumed to be a specific door ID
-                if (args.length < 3) { LightControl.utils.sendGmMessage("❌ Error: Missing action for specific door ID. Use: `!door [ID] <action>`."); return; }
-                const doorID = originalTarget;
-                const action = args[2].toLowerCase();
-                this.processSingleDoor(doorID, action, playerid);
+            else { // Assumed to be one or more specific door IDs
+                if (args.length < 3) {
+                    LightControl.utils.sendGmMessage("❌ Error: Missing action or door ID(s). Use: `!door [ID1] [ID2]... <action>`.");
+                    return;
+                }
+
+                const action = args[args.length - 1].toLowerCase();
+                const doorIDs = args.slice(1, args.length - 1);
+                
+                if (doorIDs.length === 0) {
+                    LightControl.utils.sendGmMessage("❌ Error: No door ID(s) provided. Use: `!door [ID1] [ID2]... <action>`.");
+                    return;
+                }
+
+                let successes = 0;
+                let failures = [];
+
+                doorIDs.forEach(doorID => {
+                    let door = getObj("door", doorID) || getObj("window", doorID);
+                    if (!door) {
+                        failures.push(`Object ${doorID} not found.`);
+                        return;
+                    }
+                    
+                    let feedback = this.applyActionToDoorObject(door, action);
+
+                    if (feedback.startsWith("❌") || feedback.startsWith("⚠️")) {
+                        failures.push(feedback);
+                    } else {
+                        successes++;
+                    }
+                });
+
+                if (successes > 0) {
+                    LightControl.utils.logDoorOperation(`🚪 Processed ${successes} door(s)/window(s). Action: \`${action}\`.`);
+                }
+                if (failures.length > 0) {
+                    LightControl.utils.sendGmMessage(`❌ Some operations failed:<br>${failures.join('<br>')}`);
+                }
             }
         },
 
@@ -541,7 +576,8 @@ on("chat:message", function(msg) {
     // Door Commands
     else if (command === "!door") {
         // Pass the player ID and selected graphics from the msg object for GM check and area operations
-        LightControl.door.processDoorCommand({...args, whoisplayerid: msg.playerid, selected: msg.selected }); 
+        Object.assign(args, { whoisplayerid: msg.playerid, selected: msg.selected });
+        LightControl.door.processDoorCommand(args);
     }
     // LightControl specific commands (e.g., help)
     else if (command === "!lc" || command === "!lightcontrol") {

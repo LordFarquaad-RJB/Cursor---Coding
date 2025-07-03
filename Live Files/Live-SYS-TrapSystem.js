@@ -2213,6 +2213,23 @@ const TrapSystem = {
 
             // --- Auto-trigger logic ---
             if (data.autoTrigger) {
+                // NEW: Check for simple fire-and-forget interaction trap triggered by MOVEMENT
+                if (data.type === 'interaction' && data.primaryMacro && !data.successMacro && !data.failureMacro) {
+                    TrapSystem.utils.log(`Simple auto-triggered interaction trap '${trapToken.get('name')}'. Resolving immediately.`, 'info');
+                    
+                    // 1. Execute primary macro by calling markTriggered
+                    TrapSystem.triggers.markTriggered(triggeredToken.id, trapToken.id, 'primary');
+                    
+                    // 2. Immediately unlock the token (allowMovement handles use depletion)
+                    TrapSystem.triggers.allowMovement(triggeredToken.id, true); // Suppress individual message
+                    
+                    // 3. Notify GM with a menu button
+                    const gmMessage = `&{template:default} {{name=✅ Auto-Trap Resolved}} {{Trap Name=${trapToken.get('name') || 'Unnamed Trap'}}} {{Triggered By=${triggeredToken.get('name') || 'Unnamed Token'}}} {{message=The trap's primary action was fired and the token was released.}} {{actions=[⚙️ Manage Trap](!trapsystem showmenu ${trapToken.id})}}`;
+                    TrapSystem.utils.chat(gmMessage);
+
+                    return; // Stop further processing
+                }
+
                 if (data.primaryMacro && data.primaryMacro.macro) {
                     // Use the new centralized helper function
                     const success = TrapSystem.triggers.markTriggered(triggeredToken.id, trapToken.id, 'primary');
@@ -2526,7 +2543,7 @@ const TrapSystem = {
         },
 
         // Show manual trigger panel
-        manualTrigger(trapToken) {
+        manualTrigger(trapToken, playerId) {
             if (!trapToken) {
                 TrapSystem.utils.chat('❌ Error: No trap token selected!');
                 return;
@@ -2540,7 +2557,7 @@ const TrapSystem = {
             if (trapData.autoTrigger &&
                 trapData.primaryMacro &&
                 trapData.primaryMacro.macro) {
-                this.manualMacroTrigger(trapToken.id, trapData.primaryMacro.macro);
+                this.manualMacroTrigger(trapToken.id, 'primary', playerId);
                 return;
             }
 
@@ -2630,7 +2647,7 @@ const TrapSystem = {
                 }
 
                 if (content.startsWith('&{')) { // This is a roll template
-                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                    return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Escape backslashes and double quotes, then quote
                 }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
@@ -2648,7 +2665,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape backslashes and double quotes
+                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Escape backslashes and double quotes, then quote
             };
 
             const primaryMacroProcessed = processMacro(mainMacro);
@@ -2926,7 +2943,7 @@ const TrapSystem = {
             }
         },
 
-        manualMacroTrigger(trapId, macroIdentifier) {
+        manualMacroTrigger(trapId, macroIdentifier, playerId) { // Added playerId
             const trapToken = getObj("graphic", trapId);
             if (!trapToken) {
                 TrapSystem.utils.chat('❌ Error: Trap token not found!');
@@ -2948,34 +2965,60 @@ const TrapSystem = {
                     macroToExecute = trapData.options[optionIndex].macro;
                 }
             }
+
             if (macroToExecute) {
                 const macroExecuted = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
                 if (macroExecuted) {
-                    const newUses = trapData.currentUses - 1;
-                    const stillArmed = newUses > 0;
-                    TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
-                    if (!stillArmed) {
-                        TrapSystem.utils.sendDepletedMessage(trapToken);
-                    }
+                    // Check if this is an interaction trap that needs a follow-up menu
+                    if (trapData.type === 'interaction') {
+                        // NEW: Check for simple fire-and-forget interaction trap
+                        if (trapData.primaryMacro && !trapData.successMacro && !trapData.failureMacro) {
+                            TrapSystem.utils.log(`Simple manually-triggered interaction trap '${trapToken.get('name')}'. Resolving immediately.`, 'info');
+                            
+                            // Deplete use now since there's no token to "release".
+                            const newUses = trapData.currentUses - 1;
+                            const stillArmed = newUses > 0;
+                            TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
+                            if (!stillArmed && trapData.currentUses > 0) { // Check original uses
+                                TrapSystem.utils.sendDepletedMessage(trapToken);
+                            }
 
-                    // Determine correct aura color based on trap type
-                    const isInteraction = trapData.type === 'interaction';
-                    let auraColor;
-                    if (stillArmed) {
-                        if (TrapSystem.state.triggersEnabled) {
-                            auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.ARMED_INTERACTION : TrapSystem.config.AURA_COLORS.ARMED;
-                        } else {
-                            auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+                            // Notify GM
+                            const gmMessage = `&{template:default} {{name=✅ Manual Auto-Trap Resolved}} {{Trap Name=${trapToken.get('name') || 'Unnamed Trap'}}} {{message=The trap's primary action was fired.}} {{actions=[⚙️ Manage Trap](!trapsystem showmenu ${trapToken.id})}}`;
+                            TrapSystem.utils.chat(gmMessage);
+                            
+                            return; // Stop further processing
                         }
-                    } else {
-                        auraColor = isInteraction ? TrapSystem.config.AURA_COLORS.DISARMED_INTERACTION : TrapSystem.config.AURA_COLORS.DISARMED;
-                    }
 
-                    trapToken.set({
-                        aura1_color: auraColor,
-                        aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
-                        showplayers_aura1: false
-                    });
+                        TrapSystem.utils.log(`Interaction trap manually triggered via '${macroIdentifier}'. Showing character selection menu to GM ${playerId}.`, 'info');
+                        // Do not deplete use. Show the next menu to the GM who initiated the command.
+                        TrapSystem.menu.showCharacterSelectionMenu(trapToken, playerId, null);
+                    } else {
+                        // For standard traps, the trigger is a one-and-done action. Deplete use.
+                        const newUses = trapData.currentUses - 1;
+                        const stillArmed = newUses > 0;
+                        TrapSystem.utils.updateTrapUses(trapToken, newUses, trapData.maxUses, stillArmed);
+                        if (!stillArmed) {
+                            TrapSystem.utils.sendDepletedMessage(trapToken);
+                        }
+                         // Determine correct aura color based on trap type
+                        let auraColor;
+                        if (stillArmed) {
+                            if (TrapSystem.state.triggersEnabled) {
+                                auraColor = TrapSystem.config.AURA_COLORS.ARMED;
+                            } else {
+                                auraColor = TrapSystem.config.AURA_COLORS.PAUSED;
+                            }
+                        } else {
+                            auraColor = TrapSystem.config.AURA_COLORS.DISARMED;
+                        }
+
+                        trapToken.set({
+                            aura1_color: auraColor,
+                            aura1_radius: TrapSystem.utils.calculateDynamicAuraRadius(trapToken),
+                            showplayers_aura1: false
+                        });
+                    }
                 } else {
                     TrapSystem.utils.chat('❌ Failed to execute the macro.');
                 }
@@ -3080,7 +3123,6 @@ const TrapSystem = {
                     }
                     // If this is a simple "fire-and-forget" trap with a primary action but no further steps (no success/fail macros, no checks),
                     // then we resolve the trap state immediately after the primary macro runs.
-                    // if (config.primaryMacro && !config.successMacro && !config.failureMacro && (!config.checks || config.checks.length === 0)) { - if you want to resolve the trap after the skill check replace line below with this one
                     if (config.primaryMacro && !config.successMacro && !config.failureMacro) {
                         TrapSystem.utils.log(`Primary-only interaction trap '${token.get('name')}' triggered. Resolving immediately.`, 'info');
 
@@ -3088,17 +3130,19 @@ const TrapSystem = {
                             // A token was locked by this trap's trigger. Release it.
                             // The allowMovement function will handle depleting the use since markTriggered was called.
                             TrapSystem.triggers.allowMovement(triggeredTokenId, true); // Suppress individual message
-                            TrapSystem.utils.chat(`✅ Trap '${token.get("name")}' triggered on '${trappedToken.get("name")}' and resolved.`);
+                            const gmMessage = `&{template:default} {{name=✅ Auto-Trap Resolved}} {{Trap Name=${token.get('name') || 'Unnamed Trap'}}} {{Triggered By=${trappedToken.get('name') || 'Unnamed Token'}}} {{message=The trap's primary action was fired and the token was released.}} {{actions=[⚙️ Manage Trap](!trapsystem showmenu ${token.id})}}`;
+                            TrapSystem.utils.chat(gmMessage);
                         } else {
-                            // This was a manual trigger (e.g., from !trapsystem trigger). Deplete the use directly.
+                            // This was a manual trigger (e.g., from the interaction menu). Deplete the use directly.
                             const newUses = Math.max(0, config.currentUses - 1);
                             const stillArmed = newUses > 0;
                             TrapSystem.utils.updateTrapUses(token, newUses, config.maxUses, stillArmed);
                             if (!stillArmed && config.currentUses > 0) {
                                 TrapSystem.utils.sendDepletedMessage(token);
-                            } else {
-                                TrapSystem.utils.chat(`✅ Trap '${token.get("name")}' triggered and resolved.`);
                             }
+                             // Notify GM
+                            const gmMessage = `&{template:default} {{name=✅ Manual Auto-Trap Resolved}} {{Trap Name=${token.get('name') || 'Unnamed Trap'}}} {{message=The trap's primary action was fired.}} {{actions=[⚙️ Manage Trap](!trapsystem showmenu ${token.id})}}`;
+                            TrapSystem.utils.chat(gmMessage);
                         }
                         // Stop here. Do not show any further menus.
                         return;
@@ -5329,7 +5373,7 @@ on("chat:message",(msg) => {
                     TrapSystem.utils.chat('❌ No token selected for trigger');
                     return;
                 }
-                TrapSystem.triggers.manualTrigger(selectedToken);
+                TrapSystem.triggers.manualTrigger(selectedToken, msg.playerid);
                 break;
             case "ignoretraps":
                 if(!selectedToken) {
@@ -5338,13 +5382,19 @@ on("chat:message",(msg) => {
                 }
                 TrapSystem.utils.toggleIgnoreTraps(selectedToken);
                 break;
-            case "showmenu":
-                if(!selectedToken) {
-                    TrapSystem.utils.chat('❌ No token selected for showmenu');
+            case "showmenu": {
+                const tid = args[2] || (selectedToken && selectedToken.id);
+                if(!tid) {
+                    TrapSystem.utils.chat('❌ No token selected or provided for showmenu');
                     return;
                 }
-                TrapSystem.menu.showInteractionMenu(selectedToken);
-                break;
+                const tk = getObj("graphic", tid);
+                 if (!tk || !TrapSystem.utils.isTrap(tk)) {
+                    TrapSystem.utils.chat('❌ Could not find a valid trap with that ID.');
+                    return;
+                }
+                TrapSystem.menu.showInteractionMenu(tk);
+                } break;
             case "interact":
                 if(args.length < 4) {
                     TrapSystem.utils.chat("❌ Missing parameters for interact");
@@ -5521,7 +5571,7 @@ on("chat:message",(msg) => {
                 }
                 const trapId = parts[2];
                 const macroIdentifier = parts.slice(3).join(' '); // e.g., "primary" or "option 0"
-                TrapSystem.triggers.manualMacroTrigger(trapId, macroIdentifier);
+                TrapSystem.triggers.manualMacroTrigger(trapId, macroIdentifier, msg.playerid);
                 break;
             }
             case "displaydc":
