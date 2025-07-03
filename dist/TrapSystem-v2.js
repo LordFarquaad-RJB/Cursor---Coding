@@ -5,8 +5,57 @@ var TrapSystem = (function (exports) {
   // Core configuration and state for TrapSystem v2
 
   const Config = {
+    DEBUG: false,
     DEFAULT_GRID_SIZE: 70,
-    DEFAULT_SCALE: 5};
+    DEFAULT_SCALE: 5,
+    MIN_MOVEMENT_FACTOR: 0.3,
+    AURA_COLORS: {
+      ARMED: '#00ff00',
+      ARMED_INTERACTION: '#6aa84f',
+      DISARMED: '#ff0000',
+      DISARMED_INTERACTION: '#a61c00',
+      PAUSED: '#ffa500',
+      DETECTION: '#808080',
+      DETECTED: '#c0c0c0',
+      DISARMED_UNDETECTED: '#00008B',
+      DISARMED_DETECTED: '#A9A9A9',
+      DETECTION_OFF: '#222222',
+      PASSIVE_DISABLED: '#5b0f00'
+    },
+    SKILL_TYPES: {
+      'Flat Roll': '🎲',
+      Acrobatics: '🤸',
+      'Animal Handling': '🐎',
+      Arcana: '✨',
+      Athletics: '💪',
+      Deception: '🎭',
+      History: '📚',
+      Insight: '👁️',
+      Intimidation: '😠',
+      Investigation: '🔍',
+      Medicine: '⚕️',
+      Nature: '🌿',
+      Perception: '👀',
+      Performance: '🎪',
+      Persuasion: '💬',
+      Religion: '⛪',
+      'Sleight of Hand': '🎯',
+      Stealth: '👥',
+      Survival: '🏕️',
+      'Strength Check': '💪',
+      'Strength Saving Throw': '🛡️💪',
+      'Dexterity Check': '🤸',
+      'Dexterity Saving Throw': '🛡️🤸',
+      'Constitution Check': '🏋️',
+      'Constitution Saving Throw': '🛡️🏋️',
+      'Intelligence Check': '🧠',
+      'Intelligence Saving Throw': '🛡️🧠',
+      'Wisdom Check': '👁️',
+      'Wisdom Saving Throw': '🛡️👁️',
+      'Charisma Check': '💬',
+      'Charisma Saving Throw': '🛡️💬'
+    }
+  };
 
   // Simple central state store (will be fleshed out later)
   const State = {
@@ -384,8 +433,10 @@ var TrapSystem = (function (exports) {
 
   const TrapSystem = {
     utils: TrapUtils$1,
+    config: Config,
+    state: State,
     // Namespaces to be wired up in later phases
-    core: {},
+    core: { Config, State },
     detection: detector,
     interaction: {},
     macros: {},
@@ -396,6 +447,7 @@ var TrapSystem = (function (exports) {
   globalThis.TrapSystem = TrapSystem;
 
   console.log('📦 TrapSystem v2 scaffold loaded');
+  console.log('🔧 Config loaded:', Config.AURA_COLORS ? 'Complete' : 'Incomplete');
 
   exports.TrapSystem = TrapSystem;
 
