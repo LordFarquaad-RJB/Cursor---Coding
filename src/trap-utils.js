@@ -328,21 +328,54 @@ export function parseTrapNotes(rawNotes, token = null) {
   if (!m) return null;
   const body = m[1];
   const getSetting = key => {
-    const s = new RegExp(`${key}:\s*\\[([^\\]]*)\\]`, 'i').exec(body);
+    const s = new RegExp(`${key}:\\s*\\[([^\\]]*)\\]`, 'i').exec(body);
     return s ? s[1].trim() : null;
   };
+  
   const type = getSetting('type') || 'standard';
   const usesStr = getSetting('uses') || '0/0';
   const usesParts = usesStr.match(/(\d+)\/(\d+)/) || [0, 0, 0];
   const currentUses = parseInt(usesParts[1], 10);
   const maxUses = parseInt(usesParts[2], 10);
   const armed = (getSetting('armed') || 'on').toLowerCase() === 'on';
+  
+  // Extract macros
+  const primaryMacro = getSetting('primaryMacro');
+  const successMacro = getSetting('successMacro');
+  const failureMacro = getSetting('failureMacro');
+  const optionsStr = getSetting('options');
+  const options = optionsStr ? optionsStr.split(';').map(opt => ({ macro: opt.trim() })).filter(o => o.macro) : [];
+  
+  // Extract checks
+  const checksStr = getSetting('checks');
+  const checks = checksStr ? checksStr.split(';').map(chk => {
+    const parts = chk.split(':');
+    return parts.length === 2 ? { type: parts[0].trim(), dc: parseInt(parts[1], 10) } : null;
+  }).filter(Boolean) : [];
+  
+  // Extract position
+  const posStr = getSetting('position') || 'intersection';
+  let position = posStr;
+  const coordMatch = posStr.match(/(\d+)\s*,\s*(\d+)/);
+  if (coordMatch) position = { x: parseInt(coordMatch[1], 10), y: parseInt(coordMatch[2], 10) };
+  
+  // Extract flags
+  const movementTrigger = (getSetting('movementTrigger') || 'on').toLowerCase() === 'on';
+  const autoTrigger = (getSetting('autoTrigger') || 'off').toLowerCase() === 'on';
 
   const data = {
     type,
     currentUses,
     maxUses,
     isArmed: armed,
+    primaryMacro: primaryMacro ? { macro: primaryMacro } : null,
+    successMacro,
+    failureMacro,
+    options,
+    checks,
+    position,
+    movementTrigger,
+    autoTrigger,
     raw: decoded
   };
 
