@@ -151,3 +151,74 @@ Object.assign(TrapUtils, {
   isTrap,
   getTokenImageURL
 });
+
+// ------------------------------------------------------------------
+// Geometry helpers (migrated)
+// ------------------------------------------------------------------
+
+function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
+  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (!denom) return null;
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+    return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+  }
+  return null;
+}
+
+function getTokenCenter(token) {
+  return { x: token.get('left'), y: token.get('top') };
+}
+
+function getOBBCorners(token) {
+  if (!token) return null;
+  const centerX = token.get('left');
+  const centerY = token.get('top');
+  const width = token.get('width');
+  const height = token.get('height');
+  const rotationDeg = token.get('rotation') || 0;
+  const rotationRad = rotationDeg * (Math.PI / 180);
+
+  const halfW = width / 2;
+  const halfH = height / 2;
+
+  const localCorners = [
+    { x: -halfW, y: -halfH }, // TL
+    { x: halfW, y: -halfH },  // TR
+    { x: halfW, y: halfH },   // BR
+    { x: -halfW, y: halfH }   // BL
+  ];
+
+  const cosR = Math.cos(rotationRad);
+  const sinR = Math.sin(rotationRad);
+  return localCorners.map(c => ({
+    x: centerX + c.x * cosR - c.y * sinR,
+    y: centerY + c.x * sinR + c.y * cosR
+  }));
+}
+
+function isPointInOBB(point, corners) {
+  if (!point || !Array.isArray(corners) || corners.length !== 4) return false;
+  const c0 = corners[0];
+  const c1 = corners[1];
+  const c3 = corners[3];
+  const ABx = c1.x - c0.x;
+  const ABy = c1.y - c0.y;
+  const ADx = c3.x - c0.x;
+  const ADy = c3.y - c0.y;
+  const APx = point.x - c0.x;
+  const APy = point.y - c0.y;
+  const dotAB_AP = APx * ABx + APy * ABy;
+  const dotAD_AP = APx * ADx + APy * ADy;
+  const magSqAB = ABx * ABx + ABy * ABy;
+  const magSqAD = ADx * ADx + ADy * ADy;
+  return (0 <= dotAB_AP && dotAB_AP <= magSqAB && 0 <= dotAD_AP && dotAD_AP <= magSqAD);
+}
+
+TrapUtils.geometry = {
+  lineIntersection,
+  getTokenCenter,
+  getOBBCorners,
+  isPointInOBB
+};
