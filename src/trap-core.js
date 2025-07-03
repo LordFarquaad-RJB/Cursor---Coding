@@ -6,6 +6,10 @@ export const Config = {
   DEFAULT_GRID_SIZE: 70,
   DEFAULT_SCALE: 5,
   MIN_MOVEMENT_FACTOR: 0.3,
+  aura: {
+    TARGET_RADIUS_GRID_UNITS: 1.0,   // default aura size in GU
+    VISIBILITY_BOOST_GU: 0.3        // extra radius so aura is always visible
+  },
   AURA_COLORS: {
     ARMED: '#00ff00',
     ARMED_INTERACTION: '#6aa84f',

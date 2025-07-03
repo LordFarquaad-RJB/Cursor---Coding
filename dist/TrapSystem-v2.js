@@ -9,6 +9,10 @@ var TrapSystem = (function (exports) {
     DEFAULT_GRID_SIZE: 70,
     DEFAULT_SCALE: 5,
     MIN_MOVEMENT_FACTOR: 0.3,
+    aura: {
+      TARGET_RADIUS_GRID_UNITS: 1.0,   // default aura size in GU
+      VISIBILITY_BOOST_GU: 0.3        // extra radius so aura is always visible
+    },
     AURA_COLORS: {
       ARMED: '#00ff00',
       ARMED_INTERACTION: '#6aa84f',
@@ -370,9 +374,107 @@ var TrapSystem = (function (exports) {
 
   TrapUtils.getSafeMacroDisplayName = getSafeMacroDisplayName;
 
+  // ------------------------------------------------------------------
+  // Migrated core parsing + state helpers (simplified v1)
+  // ------------------------------------------------------------------
+
+  // Quick/partial GM-notes parser for the modern {!traptrigger …} format.
+  // It extracts: type, currentUses, maxUses, isArmed, position, etc.
+  function parseTrapNotes(rawNotes, token = null) {
+    if (!rawNotes) return null;
+    let decoded = rawNotes;
+    try { decoded = decodeURIComponent(rawNotes); } catch (_) {}
+    decoded = decoded.replace(/<br\s*\/?>/gi, ' ').replace(/\n/g, ' ').trim();
+
+    // Look for the first {!traptrigger …} block
+    const m = decoded.match(/\{!traptrigger\s+([^}]*)\}/i);
+    if (!m) return null;
+    const body = m[1];
+    const getSetting = key => {
+      const s = new RegExp(`${key}:\s*\\[([^\\]]*)\\]`, 'i').exec(body);
+      return s ? s[1].trim() : null;
+    };
+    const type = getSetting('type') || 'standard';
+    const usesStr = getSetting('uses') || '0/0';
+    const usesParts = usesStr.match(/(\d+)\/(\d+)/) || [0, 0, 0];
+    const currentUses = parseInt(usesParts[1], 10);
+    const maxUses = parseInt(usesParts[2], 10);
+    const armed = (getSetting('armed') || 'on').toLowerCase() === 'on';
+
+    const data = {
+      type,
+      currentUses,
+      maxUses,
+      isArmed: armed,
+      raw: decoded
+    };
+
+    // Minimal visual sync (update aura) if token provided
+    if (token) {
+      const color = armed ? Config.AURA_COLORS.ARMED : Config.AURA_COLORS.DISARMED;
+      token.set({
+        aura1_color: color,
+        aura1_radius: calculateDynamicAuraRadius(token),
+        showplayers_aura1: false,
+        bar1_value: currentUses,
+        bar1_max: maxUses,
+        showplayers_bar1: false
+      });
+    }
+    return data;
+  }
+
+  function calculateDynamicAuraRadius(token) {
+    if (!token) return Config.aura.TARGET_RADIUS_GRID_UNITS * (Config.DEFAULT_SCALE || 1);
+    const ps = getPageSettings(token.get('_pageid'));
+    if (!ps.valid) return Config.aura.TARGET_RADIUS_GRID_UNITS * ps.scale;
+    const wGU = token.get('width') / ps.gridSize;
+    const hGU = token.get('height') / ps.gridSize;
+    const minGU = Math.min(wGU, hGU);
+    // If token larger than aura diameter keep aura inside borders using negative radius hack
+    if (minGU >= Config.aura.TARGET_RADIUS_GRID_UNITS * 2) {
+      return -(minGU * 0.5) + Config.aura.VISIBILITY_BOOST_GU * ps.scale;
+    }
+    // Otherwise use positive radius scaled to units
+    return Config.aura.TARGET_RADIUS_GRID_UNITS * ps.scale;
+  }
+
+  function updateTrapUses(token, current, max, armed = null) {
+    if (!token) return;
+    let notes = token.get('gmnotes') || '';
+    let dec = notes;
+    try { dec = decodeURIComponent(notes); } catch (_) {}
+    const repl = (field, value) => {
+      const re = new RegExp(`${field}:\\s*\\[[^\\]]*\\]`);
+      if (re.test(dec)) dec = dec.replace(re, `${field}:[${value}]`);
+      else dec = dec.replace(/\{!traptrigger/, `{!traptrigger ${field}:[${value}]`);
+    };
+    repl('uses', `${current}/${max}`);
+    if (armed !== null) repl('armed', armed ? 'on' : 'off');
+    token.set('gmnotes', encodeURIComponent(dec));
+
+    // sync bars & aura
+    token.set({
+      bar1_value: current,
+      bar1_max: max,
+      aura1_color: armed === false ? Config.AURA_COLORS.DISARMED : Config.AURA_COLORS.ARMED,
+      aura1_radius: calculateDynamicAuraRadius(token),
+      showplayers_bar1: false,
+      showplayers_aura1: false
+    });
+  }
+
+  // Attach to export object
+  Object.assign(TrapUtils, {
+    parseTrapNotes,
+    calculateDynamicAuraRadius,
+    updateTrapUses
+  });
+
   var TrapUtils$1 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     TrapUtils: TrapUtils,
+    calculateDynamicAuraRadius: calculateDynamicAuraRadius,
     chat: chat,
     decodeHtml: decodeHtml,
     default: TrapUtils,
@@ -380,7 +482,9 @@ var TrapSystem = (function (exports) {
     getTokenImageURL: getTokenImageURL,
     isTrap: isTrap,
     log: log,
+    parseTrapNotes: parseTrapNotes,
     playerIsGM: playerIsGM,
+    updateTrapUses: updateTrapUses,
     validateCommandArgs: validateCommandArgs,
     validateTrapToken: validateTrapToken,
     whisper: whisper
@@ -958,6 +1062,49 @@ var TrapSystem = (function (exports) {
     sendInfo
   };
 
+  // src/trap-triggers.js
+  // Initial migration of trigger-control helpers (wrapper around legacy for now)
+
+
+  function toggleTrap(token) {
+    if (!TrapUtils.validateTrapToken(token, 'toggleTrap')) return;
+    const data = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (!data) {
+      TrapUtils.chat('❌ Invalid trap configuration.');
+      return;
+    }
+    const newArmed = !data.isArmed;
+    let newUses = data.currentUses;
+    if (newArmed && newUses <= 0) newUses = 1;
+    TrapUtils.updateTrapUses(token, newUses, data.maxUses, newArmed);
+    TrapUtils.chat(`${newArmed ? '🎯 Armed' : '🔴 Disarmed'} (uses ${newUses}/${data.maxUses})`);
+  }
+
+  function getTrapStatus(token) {
+    if (!TrapUtils.validateTrapToken(token, 'status')) return;
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
+      TrapUtils.chat('❌ status: legacy utilities not available yet.');
+      return;
+    }
+    const data = legacyUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (!data) {
+      TrapUtils.chat('❌ Invalid trap configuration.');
+      return;
+    }
+    const sections = [
+      `name=Trap Status`,
+      `State=${data.isArmed ? '🎯 ARMED' : '🔴 DISARMED'}`,
+      `Uses=${data.currentUses}/${data.maxUses}`
+    ];
+    ui.sendGM(ui.buildDefaultTemplate(sections));
+  }
+
+  const triggers = {
+    toggleTrap,
+    getTrapStatus
+  };
+
   // src/trap-detector.js
   // Migration of movement-based detection helpers.
 
@@ -1013,6 +1160,7 @@ var TrapSystem = (function (exports) {
       movement: detector,
       passive: detection
     },
+    triggers: triggers,
     interaction: interaction,
     macros: macros,
     ui: ui

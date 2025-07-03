@@ -13,6 +13,7 @@ import { ui as uiSystem } from './trap-ui.js';
 import './trap-triggers.js';
 import { detector } from './trap-detector.js';
 import { detection as passiveDetection } from './trap-detection.js';
+import { triggers as triggerSystem } from './trap-triggers.js';
 
 const TrapSystem = {
   utils: TrapUtils,
@@ -24,6 +25,7 @@ const TrapSystem = {
     movement: detector,
     passive: passiveDetection
   },
+  triggers: triggerSystem,
   interaction: interactionSystem,
   macros: macroSystem,
   ui: uiSystem

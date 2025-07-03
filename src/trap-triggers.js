@@ -7,23 +7,16 @@ import { ui } from './trap-ui.js';
 
 function toggleTrap(token) {
   if (!TrapUtils.validateTrapToken(token, 'toggleTrap')) return;
-  const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
-  if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
-    TrapUtils.chat('❌ toggleTrap: legacy utilities not available yet.');
-    return;
-  }
-  const data = legacyUtils.parseTrapNotes(token.get('gmnotes'), token);
+  const data = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
   if (!data) {
     TrapUtils.chat('❌ Invalid trap configuration.');
     return;
   }
-  const newArmedState = !data.isArmed;
+  const newArmed = !data.isArmed;
   let newUses = data.currentUses;
-  if (newArmedState && newUses <= 0) newUses = 1;
-  if (typeof legacyUtils.updateTrapUses === 'function') {
-    legacyUtils.updateTrapUses(token, newUses, data.maxUses, newArmedState);
-  }
-  TrapUtils.chat(`${newArmedState ? '🎯' : '🔴'} Trap ${newArmedState ? 'ARMED' : 'DISARMED'}`);
+  if (newArmed && newUses <= 0) newUses = 1;
+  TrapUtils.updateTrapUses(token, newUses, data.maxUses, newArmed);
+  TrapUtils.chat(`${newArmed ? '🎯 Armed' : '🔴 Disarmed'} (uses ${newUses}/${data.maxUses})`);
 }
 
 function getTrapStatus(token) {
