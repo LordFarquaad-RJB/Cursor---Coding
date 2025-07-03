@@ -5,6 +5,8 @@
 
 /* eslint-disable no-console */
 
+import { Config, State } from './trap-core.js';
+
 export function log(message, type = 'info') {
   const prefix = {
     info: '📜',
@@ -216,9 +218,74 @@ function isPointInOBB(point, corners) {
   return (0 <= dotAB_AP && dotAB_AP <= magSqAB && 0 <= dotAD_AP && dotAD_AP <= magSqAD);
 }
 
+function getPageSettings(pageId) {
+  const page = getObj ? getObj('page', pageId) : null;
+  if (!page) {
+    if (!State.warnedInvalidGridPages[pageId || 'unknown']) {
+      log(`Page ${pageId} not found, using defaults`, 'warning');
+      State.warnedInvalidGridPages[pageId || 'unknown'] = true;
+    }
+    return {
+      gridSize: Config.DEFAULT_GRID_SIZE,
+      scale: Config.DEFAULT_SCALE,
+      gridType: 'square',
+      valid: false
+    };
+  }
+  let gridSize = page.get('gridsize');
+  const snap = page.get('snapping_increment');
+  if (snap === 0 || !gridSize || gridSize < 2) {
+    gridSize = Config.DEFAULT_GRID_SIZE;
+  }
+  return {
+    gridSize,
+    scale: page.get('scale_number') || Config.DEFAULT_SCALE,
+    gridType: page.get('grid_type'),
+    valid: true
+  };
+}
+
+function getTokenGridCoords(token) {
+  if (!token) return null;
+  const ps = getPageSettings(token.get('_pageid'));
+  const g = ps.gridSize;
+  const left = token.get('left');
+  const top = token.get('top');
+  const w = token.get('width');
+  const h = token.get('height');
+  return {
+    x: Math.round((left - w / 2) / g),
+    y: Math.round((top - h / 2) / g),
+    width: Math.ceil(w / g),
+    height: Math.ceil(h / g),
+    gridSize: g,
+    scale: ps.scale,
+    gridType: ps.gridType,
+    pixelX: left,
+    pixelY: top,
+    tokenWidth: w,
+    tokenHeight: h
+  };
+}
+
+function calculateTokenDistance(token1, token2) {
+  if (!token1 || !token2 || token1.get('_pageid') !== token2.get('_pageid')) return { pixelDistance: Infinity, mapUnitDistance: Infinity };
+  const ps = getPageSettings(token1.get('_pageid'));
+  const c1 = getTokenGridCoords(token1);
+  const c2 = getTokenGridCoords(token2);
+  const dx = c1.pixelX - c2.pixelX;
+  const dy = c1.pixelY - c2.pixelY;
+  const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+  const mapUnitDistance = (pixelDistance / ps.gridSize) * ps.scale;
+  return { pixelDistance, mapUnitDistance };
+}
+
 TrapUtils.geometry = {
   lineIntersection,
   getTokenCenter,
   getOBBCorners,
-  isPointInOBB
+  isPointInOBB,
+  getPageSettings,
+  getTokenGridCoords,
+  calculateTokenDistance
 };
