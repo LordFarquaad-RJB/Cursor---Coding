@@ -2630,7 +2630,7 @@ const TrapSystem = {
                 }
 
                 if (content.startsWith('&{')) { // This is a roll template
-                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                    return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Escape backslashes and double quotes, then quote
                 }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
@@ -2648,7 +2648,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Escape backslashes and double quotes, then quote
             };
 
             const primaryMacroProcessed = processMacro(mainMacro);
