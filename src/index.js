@@ -9,6 +9,7 @@ import './trap-detection.js';
 import './trap-interaction.js';
 import './trap-macros.js';
 import './trap-ui.js';
+import './trap-triggers.js';
 
 const TrapSystem = {
   utils: TrapUtils,
