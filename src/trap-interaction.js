@@ -127,23 +127,62 @@ function getNearbyCharacters(trapToken, maxDistance = 30) {
 }
 
 // Build and send interaction menu
-function showInteractionMenu(trapToken, characterTokens = null) {
-  if (!trapToken) {
-    TrapUtils.log('No trap token provided for interaction menu', 'error');
-    return;
-  }
+function showInteractionMenu(trapToken, triggeredTokenId = null) {
+  if (!trapToken) return;
   
-  const nearbyChars = characterTokens || getNearbyCharacters(trapToken);
-  
-  // Import ui system dynamically to avoid circular imports
-  const uiSystem = globalThis.TrapSystem && globalThis.TrapSystem.ui;
-  if (uiSystem && typeof uiSystem.buildInteractionMenu === 'function') {
-    const menu = uiSystem.buildInteractionMenu(trapToken, nearbyChars);
-    if (menu) {
-      uiSystem.sendGM(menu);
+  try {
+    const tokenImgUrl = TrapUtils.getTokenImageURL(trapToken);
+    const tokenImage = tokenImgUrl === '👤' 
+      ? '👤' 
+      : `<img src="${tokenImgUrl}" width="100" height="100" style="display: block; margin: 5px auto;">`;
+    const tokenName = trapToken.get('name') || 'Unknown Object';
+    const trapData = TrapUtils.parseTrapNotes(trapToken.get('gmnotes'));
+
+    if (!trapData) {
+      TrapUtils.log('Invalid trap configuration', 'error');
+      return;
     }
-  } else {
-    TrapUtils.log('UI system not available for interaction menu', 'error');
+
+    const menu = [
+      '&{template:default}',
+      `{{name=${tokenName}}}`,
+      `{{Description=${tokenImage}}}`,
+      `{{State=🎯 ${trapData.isArmed ? 'ARMED' : 'DISARMED'} (${trapData.currentUses}/${trapData.maxUses} uses)}}`
+    ];
+
+    // Action buttons section
+    if (trapData.isArmed) {
+      const triggerCmd = `!trapsystem interact ${trapToken.id} trigger ${triggeredTokenId || ''}`.trim();
+      const explainCmd = `!trapsystem interact ${trapToken.id} explain ${triggeredTokenId || ''}`.trim();
+      
+      let actionButtons = [
+        `[🎯 Trigger Action](${triggerCmd})`,
+        `[💭 Explain Action](${explainCmd})`
+      ];
+
+      // Add "Allow Movement" button if token is locked by this trap
+      if (triggeredTokenId) {
+        // Check if token is locked (this will need to reference global state when available)
+        const lockRecord = globalThis.TrapSystem?.state?.lockedTokens?.[triggeredTokenId];
+        if (lockRecord && lockRecord.trapToken === trapToken.id && lockRecord.locked) {
+          actionButtons.push(`[⏭️ Allow Move](!trapsystem allowmovement ${triggeredTokenId})`);
+        }
+      }
+      menu.push(`{{Actions=${actionButtons.join(' | ')}}}`);
+    }
+
+    // Show trap info if checks exist
+    if (trapData.checks && trapData.checks.length > 0) {
+      const checkInfo = trapData.checks.map(check => 
+        `${Config.SKILL_TYPES[check.type] || '🎲'} ${check.type} (DC ${check.dc})`
+      ).join('<br>');
+      menu.push(`{{Trap Info=Skill Check:<br>${checkInfo}}}`);
+    }
+
+    menu.push(`{{Management=[📊 Status](!trapsystem status ${trapToken.id}) | [🔄 Toggle](!trapsystem toggle ${trapToken.id})}}`);
+    sendChat('TrapSystem', `/w gm ${menu.join(' ')}`);
+  } catch (err) {
+    TrapUtils.log(`Error showing interaction menu: ${err.message}`, 'error');
   }
 }
 

@@ -64,9 +64,14 @@ function manualTrigger(trapToken) {
 
   // Interaction trap shows menu
   if (data.type === 'interaction') {
-    // For now, show basic status (menu system will be migrated later)
-    TrapUtils.chat('🔧 Interaction trap - full menu system coming in next migration phase');
-    getTrapStatus(trapToken);
+    // Use the migrated interaction menu system
+    const interactionSystem = globalThis.TrapSystem && globalThis.TrapSystem.interaction;
+    if (interactionSystem && typeof interactionSystem.showInteractionMenu === 'function') {
+      interactionSystem.showInteractionMenu(trapToken);
+    } else {
+      TrapUtils.chat('🔧 Interaction menu system not available');
+      getTrapStatus(trapToken);
+    }
     return;
   }
 
