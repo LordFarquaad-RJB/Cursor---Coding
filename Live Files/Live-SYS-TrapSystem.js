@@ -2248,15 +2248,13 @@ const TrapSystem = {
                }
            } else {
                 // Make standard control panel for standard traps
-                const img = triggeredToken.get("imgsrc")
-                    .replace(/(thumb|max)\.png/, "med.png")
-                    .replace(/\(/g, '%28').replace(/\)/g, '%29')
-                    .replace(/'/g, '%27').replace(/"/g, '%22');
+                const imgUrl = TrapSystem.utils.getTokenImageURL(triggeredToken);
+                const imgTag = imgUrl === '👤' ? '👤' : `<img src="${imgUrl}" width="40" height="40">`;
                 const name = triggeredToken.get("name") || "Unknown Token";
 
                 const panel = [
                     '&{template:default} {{name=Trap Control Panel}}',
-                    `{{Trapped Token=<img src="${img}" width="40" height="40"> **${name}**}}`,
+                    `{{Trapped Token=${imgTag} **${name}**}}`,
                     `{{State=🎯 ${data.isArmed ? "ARMED" : "DISARMED"} Uses: ${data.currentUses}/${data.maxUses}}}`,
                     `{{Reminder=⚠️ Ensure the correct trap token is selected for macros that require a selected token!}}`,
                     `{{After Trigger=${data.currentUses > 1 ? "🎯 ARMED" : "🔴 AUTO-DISARMED"} Uses: ${data.currentUses - 1}/${data.maxUses}}}`,
@@ -2297,9 +2295,8 @@ const TrapSystem = {
 
             // Build the warning menu
             const tokenName = triggeredToken.get("name") || "Your Token";
-            const tokenImg = triggeredToken.get("imgsrc")
-                ? `<img src="${triggeredToken.get("imgsrc").replace(/\/[^\/]*$/, "/med.png")}" width="40" height="40">`
-                : "";
+            const warnImgUrl = TrapSystem.utils.getTokenImageURL(triggeredToken);
+            const tokenImg = warnImgUrl === '👤' ? '👤' : `<img src="${warnImgUrl}" width="40" height="40">`;
             const menu = `&{template:default} {{name=⚠️ ${tokenName} is Trapped!}}` +
                 `{{Token=${tokenImg}}}` +
                 `{{Warning=Your token has triggered a trap and is now locked.}}` +
@@ -2485,11 +2482,9 @@ const TrapSystem = {
             }
             if(lockedList.length) {
                 let lockStr = lockedList.map(tk => {
-                    let i = tk.get("imgsrc")
-                        .replace(/(thumb|max)\.png/, "med.png")
-                        .replace(/\(/g, '%28').replace(/\)/g, '%29')
-                        .replace(/'/g, '%27').replace(/"/g, '%22');
-                    return `<img src="${i}" width="40" height="40"> ${tk.get("name")||"???"}`;
+                    const url = TrapSystem.utils.getTokenImageURL(tk);
+                    const icon = url === '👤' ? '👤' : `<img src="${url}" width="40" height="40">`;
+                    return `${icon} ${tk.get("name")||"???"}`;
                 }).join('<br>');
                 msg.push(`{{Currently Holding=${lockStr}}}`);
             }
@@ -2997,10 +2992,10 @@ const TrapSystem = {
         showInteractionMenu(trapToken, triggeredTokenId = null) { // Added triggeredTokenId parameter
             if (!trapToken) return;
             try {
-                let tokenImage = trapToken.get("imgsrc");
-                tokenImage = tokenImage.replace(/(thumb|max)\.png/, "med.png")
-                                       .replace(/\(/g, '%28').replace(/\)/g, '%29')
-                                       .replace(/'/g, '%27').replace(/"/g, '%22');
+                const tokenImgUrl = TrapSystem.utils.getTokenImageURL(trapToken);
+                const tokenImage = tokenImgUrl === '👤'
+                    ? '👤'
+                    : `<img src="${tokenImgUrl}" width="100" height="100" style="display: block; margin: 5px auto;">`;
                 const tokenName = trapToken.get("name") || "Unknown Object";
                 const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"));
 
@@ -3012,7 +3007,7 @@ const TrapSystem = {
                 const menu = [
                     '&{template:default}',
                     `{{name=${tokenName}}}`, // eslint-disable-line quotes
-                    `{{Description=<img src="${tokenImage}" width="100" height="100" style="display: block; margin: 5px auto;">}}`,
+                    `{{Description=${tokenImage}}}`,
                     `{{State=🎯 ${trapData.isArmed ? (TrapSystem.state.triggersEnabled ? "ARMED" : "⚠️ PAUSED") : "DISARMED"} (${trapData.currentUses}/${trapData.maxUses} uses)}}`
                 ];
 
@@ -3250,7 +3245,8 @@ const TrapSystem = {
         showCharacterSelectionMenu(token, playerid, triggeredTokenId = null) { // Added triggeredTokenId
             const characters = findObjs({ _type: "character" });
             const tokenName = token.get("name") || "Unknown Token";
-            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
+            const iconUrl = TrapSystem.utils.getTokenImageURL(token);
+            const tokenIcon = iconUrl === '👤' ? '👤' : `<img src="${iconUrl}" width="20" height="20">`;
         
             let menu = `&{template:default} {{name=Select Character for Skill Check}}`;
             menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
@@ -3291,7 +3287,8 @@ const TrapSystem = {
             }
             
             const tokenName = token.get("name") || "Unknown Token";
-            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
+            const url1 = TrapSystem.utils.getTokenImageURL(token);
+            const tokenIcon = url1 === '👤' ? '👤' : `<img src="${url1}" width="20" height="20">`;
             const emoji = TrapSystem.config.SKILL_TYPES[check.type] || "🎲";
             const skillType = check.type.replace(/_/g, ' ');
 
@@ -3418,7 +3415,8 @@ const TrapSystem = {
             if(!check) return;
 
             const tokenName = token.get("name") || "Unknown Token";
-            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
+            const url5 = TrapSystem.utils.getTokenImageURL(token);
+            const tokenIcon = url5 === '👤' ? '👤' : `<img src="${url5}" width="20" height="20">`;
             const emoji = TrapSystem.config.SKILL_TYPES[check.type] || "🎲";
             const skillType = check.type.replace(/_/g, ' ');
 
@@ -3480,7 +3478,8 @@ const TrapSystem = {
         showGMResponseMenu(token, playerid, triggeredTokenId = null) {
             const config = TrapSystem.utils.parseTrapNotes(token.get("gmnotes"), token);
             const tokenName = token.get("name") || "Unknown Token";
-            const tokenIcon = `<img src="${token.get('imgsrc').replace(/(thumb|max)\.png/, "med.png").replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/'/g, '%27').replace(/"/g, '%22')}" width="20" height="20">`;
+            const url5b = TrapSystem.utils.getTokenImageURL(token);
+            const tokenIcon = url5b === '👤' ? '👤' : `<img src="${url5b}" width="20" height="20">`;
             let menu = `&{template:default} {{name=GM Response}}`;
             menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
             menu += `{{Action=💭 Explained Action}}`;
@@ -3609,11 +3608,8 @@ const TrapSystem = {
                 const trappedToken = getObj("graphic", triggeredTokenId); 
                 const check = pendingCheck.config.checks[0];
                 const tokenName = token.get("name") || "Unknown Token";
-                const imgStr = token.get('imgsrc')
-                    .replace(/(thumb|max)\.png/, "med.png")
-                    .replace(/\(/g, '%28').replace(/\)/g, '%29')
-                    .replace(/'/g, '%27').replace(/"/g, '%22');
-                const tokenIcon = `<img src="${imgStr}" width="20" height="20">`;
+                const url6 = TrapSystem.utils.getTokenImageURL(token);
+                const tokenIcon = url6 === '👤' ? '👤' : `<img src="${url6}" width="20" height="20">`;
                 const characterNameToDisplay = pendingCheck.characterName || "Player";
                 const emoji = TrapSystem.config.SKILL_TYPES[check.type] || "🎲";
                 const skillType = check.type.replace(/_/g, ' ');
@@ -3655,7 +3651,8 @@ const TrapSystem = {
 
                 if (mismatch) {
                     // Show GM menu for mismatch
-                    const trapImg = token.get('imgsrc') ? `<img src='${token.get('imgsrc').replace(/\/[^\/]*$/, '/med.png')}' width='20' height='20'>` : '';
+                    const trapUrl = TrapSystem.utils.getTokenImageURL(token);
+                    const trapImg = trapUrl === '👤' ? '👤' : `<img src='${trapUrl}' width='20' height='20'>`;
                     const trapName = token.get('name') && token.get('name') !== 'Unknown Token' ? token.get('name') : 'Unknown Token';
                     const gmMenu = `&{template:default} {{name=⚠️ Roll Skill Mismatch!}} {{Character=${pendingCheck.characterName || 'Unknown'}}} {{Trap=${trapImg} ${trapName}}} {{Expected=${expectedTypeRaw}}} {{Rolled=${rolledTypeRaw || 'Flat Roll'}}} {{Reason=${mismatchReason}}} {{Actions=[✅ Accept Roll](!trapsystem resolvemismatch ${pendingCheck.characterId || pendingCheck.playerid} ${token.id} accept ${roll.total} ${roll.rollType||'normal'} ${roll.isAdvantageRoll?'1':'0'}) [❌ Reject & Reroll](!trapsystem resolvemismatch ${pendingCheck.characterId || pendingCheck.playerid} ${token.id} reject) [ℹ️ Show Trap Status](!trapsystem status ${token.id})}}`;
                     TrapSystem.utils.chat(gmMenu);
