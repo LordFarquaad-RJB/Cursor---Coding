@@ -2,9 +2,17 @@
 // Command parsing and API routing system for TrapSystem v2
 
 import TrapUtils from './trap-utils.js';
-import { Config } from './trap-core.js';
+import { Config, State } from './trap-core.js';
 import { triggers } from './trap-triggers.js';
 import { PassiveDetection } from './trap-detection.js';
+import { macros, macroExport } from './trap-macros.js';
+
+// Create TrapSystem reference for compatibility
+const TrapSystem = {
+    state: State,
+    config: Config,
+    utils: TrapUtils
+};
 
 export const Commands = {
     /**
@@ -12,6 +20,11 @@ export const Commands = {
      * @param {object} msg - The Roll20 chat message object
      */
     handleChatMessage(msg) {
+        // Process API commands for token ordering (for macro export system)
+        if (msg.type === "api" && msg.content.includes("!token-mod") && msg.content.includes("--order")) {
+            macroExport.processOrderCommand(msg.content);
+        }
+
         // Handle different message types
         if (msg.type === "advancedroll") {
             return this.handleAdvancedRoll(msg);
@@ -178,16 +191,32 @@ export const Commands = {
 
             // Export/Reset Commands
             case "exportmacros":
-                this.handleExportMacros();
+                if (!TrapSystem.utils.playerIsGM(msg.playerid)) {
+                    TrapSystem.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                    return;
+                }
+                macroExport.exportMacros();
                 break;
             case "resetstates":
-                this.handleResetStates();
+                if (!TrapSystem.utils.playerIsGM(msg.playerid)) {
+                    TrapSystem.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                    return;
+                }
+                macroExport.resetTokenStates();
                 break;
             case "resetmacros":
-                this.handleResetMacros();
+                if (!TrapSystem.utils.playerIsGM(msg.playerid)) {
+                    TrapSystem.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                    return;
+                }
+                macroExport.resetMacros();
                 break;
             case "fullreset":
-                this.handleFullReset();
+                if (!TrapSystem.utils.playerIsGM(msg.playerid)) {
+                    TrapSystem.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                    return;
+                }
+                macroExport.fullReset();
                 break;
 
             // Help Command
@@ -607,209 +636,6 @@ export const Commands = {
     },
 
     /**
-     * Handle export macros command
-     */
-    handleExportMacros() {
-        // Get the macro exporter from global TrapSystem
-        const macroExporter = globalThis.TrapSystem?.macroExporter;
-        if (macroExporter && typeof macroExporter.exportMacros === 'function') {
-            macroExporter.exportMacros();
-        } else {
-            TrapUtils.chat('❌ Macro export system not available');
-        }
-    },
-
-    /**
-     * Handle reset states command
-     */
-    handleResetStates() {
-        // Get the macro exporter from global TrapSystem
-        const macroExporter = globalThis.TrapSystem?.macroExporter;
-        if (macroExporter && typeof macroExporter.resetTokenStates === 'function') {
-            if (macroExporter.resetTokenStates()) {
-                sendChat("TrapSystem", "/w gm ✅ States reset to exported versions.");
-            } else {
-                sendChat("TrapSystem", "/w gm ℹ️ No states needed resetting or were available to reset.");
-            }
-            Config.state.macroExportRecordOrdering = false;
-        } else {
-            TrapUtils.chat('❌ Macro export system not available');
-        }
-    },
-
-    /**
-     * Handle reset macros command
-     */
-    handleResetMacros() {
-        // Get the macro exporter from global TrapSystem
-        const macroExporter = globalThis.TrapSystem?.macroExporter;
-        if (macroExporter && typeof macroExporter.resetMacros === 'function') {
-            if (macroExporter.resetMacros()) {
-                sendChat("TrapSystem", "/w gm ✅ Macros reset to exported actions.");
-            } else {
-                sendChat("TrapSystem", "/w gm ℹ️ No macros needed resetting or were available to reset.");
-            }
-        } else {
-            TrapUtils.chat('❌ Macro export system not available');
-        }
-    },
-
-    /**
-     * Handle full reset command
-     */
-    handleFullReset() {
-        // Get the macro exporter from global TrapSystem
-        const macroExporter = globalThis.TrapSystem?.macroExporter;
-        if (macroExporter && typeof macroExporter.fullReset === 'function') {
-            macroExporter.fullReset();
-        } else {
-            TrapUtils.chat('❌ Macro export system not available');
-        }
-    },
-
-    /**
-     * Handle advanced roll results from character sheets
-     */
-    handleAdvancedRoll(msg) {
-        try {
-            TrapUtils.log(`Received advancedroll message: ${JSON.stringify(msg)}`, 'debug');
-            let rollType = null;
-            if (msg.content.includes("dnd-2024__header--Advantage")) rollType = "advantage";
-            if (msg.content.includes("dnd-2024__header--Disadvantage")) rollType = "disadvantage";
-            if (msg.content.includes("dnd-2024__header--Normal")) rollType = "normal";
-
-            const re = /die__total[^>]*(?:data-result="(\d+)")?[^>]*>\s*(\d+)\s*</g;
-            let dieMatches = msg.content.match(re);
-            let dieResults = [];
-            
-            if (dieMatches) {
-                dieMatches.forEach(m => {
-                    let dr = m.match(/data-result="(\d+)"/);
-                    let tr = m.match(/>\s*(\d+)\s*</);
-                    if (dr) dieResults.push(parseInt(dr[1], 10));
-                    else if (tr) dieResults.push(parseInt(tr[1], 10));
-                });
-            }
-
-            if (dieResults.length > 0) {
-                let pending = null;
-                if (msg.characterId) {
-                    pending = Config.state.pendingChecksByChar[msg.characterId];
-                    if (pending) {
-                        TrapUtils.log(`Found pending check by character ID: ${msg.characterId}`, 'debug');
-                    }
-                }
-                
-                if (!pending) {
-                    pending = Config.state.pendingChecks[msg.playerid];
-                    if (pending) {
-                        TrapUtils.log(`Found pending check by player ID: ${msg.playerid}`, 'debug');
-                    }
-                }
-
-                if (!pending) {
-                    TrapUtils.log(`No pending check found for player:${msg.playerid} or character:${msg.characterId} from advancedroll`, 'debug');
-                    return;
-                }
-
-                let total;
-                const pref = msg.content.match(/die__total--preferred[^>]*data-result="(\d+)"/);
-                if (pref) {
-                    total = parseInt(pref[1], 10);
-                } else if (dieResults.length >= 2 && rollType) {
-                    if (rollType === "advantage") total = Math.max(...dieResults);
-                    else if (rollType === "disadvantage") total = Math.min(...dieResults);
-                    else total = dieResults[0];
-                } else {
-                    total = dieResults[0];
-                }
-
-                let rolledSkillName = null;
-                const titleMatch = msg.content.match(/<div class=\"header__title\">([^<]+)(?: Check| Save)?<\/div>/);
-                if (titleMatch && titleMatch[1]) {
-                    rolledSkillName = titleMatch[1].trim();
-                    TrapUtils.log(`Extracted rolled skill/ability from advancedroll: ${rolledSkillName}`, 'debug');
-                }
-
-                const rollData = {
-                    total,
-                    firstRoll: dieResults[0],
-                    secondRoll: dieResults[1],
-                    isAdvantageRoll: (dieResults.length >= 2),
-                    rollType,
-                    characterid: msg.characterId,
-                    playerid: msg.playerid,
-                    rolledSkillName
-                };
-                
-                TrapUtils.log(`Processed advancedroll data: ${JSON.stringify(rollData)}`, 'debug');
-                
-                // Get the interaction system from global TrapSystem
-                const interactionSystem = globalThis.TrapSystem?.menu;
-                if (interactionSystem && typeof interactionSystem.handleRollResult === 'function') {
-                    interactionSystem.handleRollResult(rollData, msg.playerid);
-                }
-            }
-        } catch (e) {
-            TrapUtils.log(`Error in advancedroll parse: ${e.message}`, 'error');
-        }
-    },
-
-    /**
-     * Handle simple roll results
-     */
-    handleRollResult(msg) {
-        try {
-            TrapUtils.log(`Received rollresult message: ${JSON.stringify(msg)}`, 'debug');
-            const r = JSON.parse(msg.content);
-            let rollTotal = null;
-
-            if (r && typeof r.total !== 'undefined') {
-                rollTotal = r.total;
-            } else if (r && r.rolls && r.rolls.length > 0 && r.rolls[0].results && r.rolls[0].results.length > 0 && typeof r.rolls[0].results[0].v !== 'undefined') {
-                rollTotal = r.rolls[0].results[0].v;
-            }
-
-            if (rollTotal !== null) {
-                const rollData = {
-                    total: rollTotal,
-                    playerid: msg.playerid
-                };
-
-                let charIdFromRoll = r.characterid || (r.rolls && r.rolls[0] && r.rolls[0].characterid);
-
-                if (!charIdFromRoll && !TrapUtils.playerIsGM(msg.playerid)) {
-                    const allCharacters = findObjs({ _type: "character" });
-                    const controlledPlayerCharacters = allCharacters.filter(char => {
-                        const controlledByArray = (char.get("controlledby") || "").split(",");
-                        return controlledByArray.includes(msg.playerid) && controlledByArray.some(pId => pId && pId.trim() !== "" && !TrapUtils.playerIsGM(pId));
-                    });
-
-                    if (controlledPlayerCharacters.length === 1) {
-                        const uniqueChar = controlledPlayerCharacters[0];
-                        rollData.characterid = uniqueChar.id;
-                        TrapUtils.log(`Flat roll by player ${msg.playerid} auto-associated with single controlled character ${uniqueChar.get('name')} (ID: ${uniqueChar.id}) for rollData.`, 'debug');
-                    }
-                } else if (charIdFromRoll) {
-                    rollData.characterid = charIdFromRoll;
-                }
-
-                TrapUtils.log(`Processed rollresult. Sending to handleRollResult: ${JSON.stringify(rollData)}`, 'debug');
-                
-                // Get the interaction system from global TrapSystem
-                const interactionSystem = globalThis.TrapSystem?.menu;
-                if (interactionSystem && typeof interactionSystem.handleRollResult === 'function') {
-                    interactionSystem.handleRollResult(rollData, msg.playerid);
-                }
-            } else {
-                TrapUtils.log(`Could not parse total from rollresult: ${msg.content}`, 'warning');
-            }
-        } catch (e) {
-            TrapUtils.log(`Error in rollresult parse: ${e.message}`, 'error');
-        }
-    },
-
-    /**
      * Show the help menu
      */
     showHelpMenu(target = 'API') {
@@ -836,6 +662,12 @@ export const Commands = {
             '[🙈 Hide Detections](!trapsystem hidedetection ?{Minutes - 0 for indefinitely|0}) - Hide all detection auras (0 = indefinitely)\n',
             '[👁️ Show Detections](!trapsystem showdetection) - Show all detection auras\n',
             '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
+            '{{🔄 **Export/Reset Commands**=',
+            '[Export Macros](!trapsystem exportmacros) - Capture current macro states and token positions',
+            '[Reset States](!trapsystem resetstates) - Reset tokens/doors to exported positions',  
+            '[Reset Macros](!trapsystem resetmacros) - Reset macro actions to exported versions',
+            '[Full Reset](!trapsystem fullreset) - Reset both states and macros completely',
+            '}}',
             '{{Tips=',
             '• <b style="color:#f04747;">Macro Types:</b> Actions can be a Roll20 Macro <span style="color:#ffcb05">#MacroName</span>, an API command <span style="color:#ffcb05">"!command"</span>, or plain chat <span style="color:#ffcb05">"text message"</span>.<br>',
             '• <b style="color:#f04747;">Workarounds:</b> To use API commands or templates in setup, you MUST disguise them. Use <span style="color:#ffcb05">$</span> for commands e.g., <span style="color:#ffcb05">"$deal-damage"</span> and <span style="color:#ffcb05">^</span> for templates e.g., <span style="color:#ffcb05">"^｛template:default｝..."</span>.<br>',

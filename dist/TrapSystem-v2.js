@@ -83,7 +83,14 @@ var TrapSystem = (function (exports) {
     pendingChecks: {},           // GM playerid -> pending check data
     pendingChecksByChar: {},     // character id -> pending check data  
     displayDCForCheck: {},       // playerid -> boolean (show DC in menus)
-    lockedTokens: {}};
+    lockedTokens: {},           // token id -> lock data
+    macroExportedMacros: [],
+    macroExportStates: {},
+    macroExportDoorStates: {},
+    macroExportTokensOrderedToFront: [],
+    macroExportTokensOrderedToBack: [],
+    macroExportRecordOrdering: false
+  };
 
   // src/trap-utils.js
   // Shared helper functions used across TrapSystem modules.
@@ -2543,9 +2550,534 @@ var TrapSystem = (function (exports) {
       }
   };
 
+  // src/trap-macros.js
+  // Macro execution & export logic
+
+
+  // Create TrapSystem reference for compatibility
+  const TrapSystem$2 = {
+      state: State,
+      utils: TrapUtils
+  };
+
+  // Build a tag-to-ID mapping for macro placeholder replacement
+  function buildTagToIdMap(tokens = []) {
+    const tagMap = {};
+    tokens.forEach(token => {
+      if (!token) return;
+      const name = token.get('name') || '';
+      if (name.trim()) {
+        const tag = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (tag) tagMap[tag] = token.id;
+      }
+    });
+    return tagMap;
+  }
+
+  // Replace macro placeholders with actual token IDs
+  function replaceMacroPlaceholdersWithTags(macroString, tagMap = {}) {
+    if (!macroString || typeof macroString !== 'string') return macroString;
+    
+    let processed = macroString;
+    
+    // Replace @{target|...} patterns
+    processed = processed.replace(/@\{target\|([^}]+)\}/g, (match, property) => {
+      return `@{target|${property}}`;
+    });
+    
+    // Replace @{selected|...} patterns  
+    processed = processed.replace(/@\{selected\|([^}]+)\}/g, (match, property) => {
+      return `@{selected|${property}}`;
+    });
+    
+    // Replace custom tags like @{goblin|token_id}
+    Object.keys(tagMap).forEach(tag => {
+      const regex = new RegExp(`@\\{${tag}\\|([^}]+)\\}`, 'gi');
+      processed = processed.replace(regex, (match, property) => {
+        if (property === 'token_id') {
+          return tagMap[tag];
+        }
+        return `@{${tagMap[tag]}|${property}}`;
+      });
+    });
+    
+    return processed;
+  }
+
+  // Execute a macro string (delegates to Roll20's sendChat)
+  function executeMacro(macroString, characterName = 'TrapSystem') {
+    if (!macroString || typeof macroString !== 'string') {
+      TrapUtils.log('Cannot execute empty macro', 'error');
+      return false;
+    }
+    
+    try {
+      // Handle different macro types
+      if (macroString.startsWith('#')) {
+        // Roll20 macro - remove # and execute
+        const macroName = macroString.slice(1);
+        sendChat(characterName, `#${macroName}`);
+      } else if (macroString.startsWith('!')) {
+        // API command
+        sendChat(characterName, macroString);
+      } else if (macroString.startsWith('&{')) {
+        // Roll template
+        sendChat(characterName, macroString);
+      } else {
+        // Regular chat message
+        sendChat(characterName, macroString);
+      }
+      
+      TrapUtils.log(`Executed macro: ${TrapUtils.getSafeMacroDisplayName(macroString)}`, 'success');
+      return true;
+    } catch (error) {
+      TrapUtils.log(`Macro execution failed: ${error.message}`, 'error');
+      return false;
+    }
+  }
+
+  // Process and execute trap macros with token context
+  function executeTrapMacros(trapToken, macroList = [], targetTokens = []) {
+    if (!trapToken || !Array.isArray(macroList)) return;
+    
+    const tagMap = buildTagToIdMap([trapToken, ...targetTokens]);
+    
+    macroList.forEach((macro, index) => {
+      if (!macro) return;
+      
+      const processedMacro = replaceMacroPlaceholdersWithTags(macro, tagMap);
+      
+      // Add a small delay between macros to prevent spam
+      setTimeout(() => {
+        executeMacro(processedMacro, trapToken.get('name') || 'Trap');
+      }, index * 100);
+    });
+  }
+
+  // Export trap configuration as a macro
+  function exportTrapAsMacro(trapToken) {
+    if (!TrapUtils.validateTrapToken(trapToken, 'exportTrapAsMacro')) return null;
+    
+    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
+    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
+      TrapUtils.log('Legacy utilities not available for export', 'error');
+      return null;
+    }
+    
+    const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
+    if (!trapData) {
+      TrapUtils.log('Invalid trap configuration for export', 'error');
+      return null;
+    }
+    
+    // Generate macro command to recreate this trap
+    const macroCommand = `!trapsystem create-trap --name "${trapData.name || 'Exported Trap'}" --trigger "${trapData.triggerType || 'movement'}" --dc ${trapData.dc || 15}`;
+    
+    return {
+      name: `Create: ${trapData.name || 'Trap'}`,
+      command: macroCommand,
+      description: `Creates a trap: ${trapData.name || 'Unnamed'}`
+    };
+  }
+
+  // Batch export multiple traps
+  function exportMultipleTraps(trapTokens = []) {
+    const exports = [];
+    
+    trapTokens.forEach(token => {
+      const exported = exportTrapAsMacro(token);
+      if (exported) exports.push(exported);
+    });
+    
+    return exports;
+  }
+
+  const macroExport = {
+      // --- State Capturing ---
+      captureTokenState(token) {
+          const tokenType = token.get("_type");
+          let state = {
+              layer: token.get("layer"),
+              gmnotes: token.get("gmnotes"),
+              name: token.get("name")
+          };
+
+          if (tokenType === "graphic") {
+              Object.assign(state, {
+                  left: token.get("left"),
+                  top: token.get("top"),
+                  width: token.get("width"),
+                  height: token.get("height"),
+                  rotation: token.get("rotation"),
+                  fliph: token.get("fliph"),
+                  flipv: token.get("flipv"),
+                  aura1_radius: token.get("aura1_radius"),
+                  aura1_color: token.get("aura1_color"),
+                  aura1_square: token.get("aura1_square"),
+                  aura2_radius: token.get("aura2_radius"),
+                  aura2_color: token.get("aura2_color"),
+                  aura2_square: token.get("aura2_square"),
+                  tint_color: token.get("tint_color"),
+                  statusmarkers: token.get("statusmarkers"),
+                  bar1_value: token.get("bar1_value"),
+                  bar1_max: token.get("bar1_max"),
+                  bar2_value: token.get("bar2_value"),
+                  bar2_max: token.get("bar2_max"),
+                  bar3_value: token.get("bar3_value"),
+                  bar3_max: token.get("bar3_max"),
+                  light_radius: token.get("light_radius"),
+                  light_dimradius: token.get("light_dimradius"),
+                  light_otherplayers: token.get("light_otherplayers"),
+                  light_hassight: token.get("light_hassight"),
+                  light_angle: token.get("light_angle"),
+                  light_losangle: token.get("light_losangle"),
+                  light_multiplier: token.get("light_multiplier"),
+                  adv_fow_view_distance: token.get("adv_fow_view_distance"),
+                  imgsrc: token.get("imgsrc")
+              });
+          } else if (tokenType === "pathv2") {
+              Object.assign(state, {
+                  path: token.get("path"),
+                  fill: token.get("fill"),
+                  stroke: token.get("stroke"),
+                  stroke_width: token.get("stroke_width"),
+                  left: token.get("left"),
+                  top: token.get("top"),
+                  width: token.get("width"),
+                  height: token.get("height"),
+                  scaleX: token.get("scaleX"),
+                  scaleY: token.get("scaleY"),
+                  rotation: token.get("rotation")
+              });
+          }
+
+          TrapSystem$2.state.macroExportStates[token.id] = state;
+          TrapSystem$2.utils.log(`Captured state for ${tokenType} ${token.id}.`, 'debug');
+      },
+
+      captureDoorObjectState(doorObj) {
+          const doorType = doorObj.get("_type");
+          if (doorType === "door" || doorType === "window") {
+              TrapSystem$2.state.macroExportDoorStates[doorObj.id] = {
+                  isOpen: doorObj.get("isOpen"),
+                  isLocked: doorObj.get("isLocked"),
+                  isSecret: doorObj.get("isSecret")
+              };
+              TrapSystem$2.utils.log(`Captured door/window state for ${doorType} ${doorObj.id}.`, 'debug');
+          }
+      },
+
+      // --- Macro Export ---
+      exportMacros() {
+          TrapSystem$2.utils.log("Starting macro export and state capture...", 'info');
+          let macros = findObjs({ _type: "macro" });
+          if (macros.length === 0) {
+              TrapSystem$2.utils.log("No macros found to export.", 'warn');
+              sendChat("TrapSystem", "/w gm ⚠️ No macros found to export.");
+              return;
+          }
+
+          TrapSystem$2.state.macroExportedMacros = [];
+          TrapSystem$2.state.macroExportStates = {}; // Clear previous states
+          TrapSystem$2.state.macroExportDoorStates = {}; // Clear previous door states
+          TrapSystem$2.state.macroExportTokensOrderedToFront = [];
+          TrapSystem$2.state.macroExportTokensOrderedToBack = [];
+
+          macros.forEach(macro => {
+              let action = macro.get("action");
+              if (!action) return;
+
+              // Save macro info
+              TrapSystem$2.state.macroExportedMacros.push({
+                  id: macro.id, // Store ID for easier lookup
+                  name: macro.get("name"),
+                  action: action
+              });
+
+              // Extract token IDs from TokenMod commands within macros
+              // New regex to correctly handle token IDs that may contain '--'
+              // and stop before the next TokenMod option (e.g., --set, --on) or end of string.
+              const tokenModRegex = /!token-mod\s+--ids\s+([-\w\s]*?)(?=\s+--[a-zA-Z][-\w]*|$)/g;
+              let match;
+              while ((match = tokenModRegex.exec(action)) !== null) {
+                  const tokenIdsStr = match[1];
+                  if (tokenIdsStr) {
+                      const tokenIDs = tokenIdsStr.split(/\s+/);
+                      tokenIDs.forEach(id => {
+                          // Check if it's a @{selected|token_id} or similar placeholder
+                          if (id.startsWith("@{") && id.endsWith("}")) {
+                              TrapSystem$2.utils.log(`Skipping placeholder ID in macro export: ${id}`, 'debug');
+                              // Optionally, could try to resolve if 'selected' is known at export time, but risky.
+                          } else {
+                              const token = TrapSystem$2.utils.getObjectById(id);
+                              if (token) {
+                                  this.captureTokenState(token);
+                              } else {
+                                  TrapSystem$2.utils.log(`Token ID ${id} from macro not found during export.`, 'warn');
+                              }
+                          }
+                      });
+                  }
+              }
+
+              // Extract door/window IDs from !door or !window commands
+              const doorWindowRegex = /!(?:door|window)\s+([^\s]+)\s+(open|close|lock|unlock|reveal|hide|togglelock|togglesecret|toggleopen)/g;
+              while ((match = doorWindowRegex.exec(action)) !== null) {
+                  const doorId = match[1];
+                   if (doorId.startsWith("@{") && doorId.endsWith("}")) {
+                      TrapSystem$2.utils.log(`Skipping placeholder ID in door/window command: ${doorId}`, 'debug');
+                  } else {
+                      const doorObj = TrapSystem$2.utils.getObjectById(doorId);
+                      if (doorObj && (doorObj.get("_type") === "door" || doorObj.get("_type") === "window")) {
+                          this.captureDoorObjectState(doorObj);
+                      } else {
+                           TrapSystem$2.utils.log(`Door/Window ID ${doorId} from macro not found or not a door/window object.`, 'warn');
+                      }
+                  }
+              }
+          });
+
+          TrapSystem$2.state.macroExportRecordOrdering = true; // Start listening for manual ordering commands
+          TrapSystem$2.utils.log("Macros exported and initial states captured.", 'success');
+          sendChat("TrapSystem", "/w gm ✅ **Macros exported & initial states captured!** Subsequent `!token-mod --order` commands will be tracked for reset.");
+      },
+
+      // --- State Resetting ---
+      resetTokenStates() {
+          if (Object.keys(TrapSystem$2.state.macroExportStates).length === 0 &&
+              Object.keys(TrapSystem$2.state.macroExportDoorStates).length === 0) {
+              TrapSystem$2.utils.log("No token or door/window states to reset.", 'info');
+              return false;
+          }
+          TrapSystem$2.utils.log("Resetting token and door/window states...", 'info');
+          let resetCount = 0;
+
+          // Reset general tokens and paths
+          Object.keys(TrapSystem$2.state.macroExportStates).forEach(tokenID => {
+              let token = TrapSystem$2.utils.getObjectById(tokenID);
+              if (token) {
+                  let savedState = TrapSystem$2.state.macroExportStates[tokenID];
+                  let type = token.get("_type");
+                  let changes = {};
+                  // Common properties
+                  if (savedState.layer !== undefined) changes.layer = savedState.layer;
+                  if (savedState.gmnotes !== undefined) changes.gmnotes = savedState.gmnotes; // Restore GM notes
+                  if (savedState.name !== undefined) changes.name = savedState.name;
+
+                  if (type === "graphic") {
+                      Object.assign(changes, {
+                          left: savedState.left,
+                          top: savedState.top,
+                          width: savedState.width,
+                          height: savedState.height,
+                          rotation: savedState.rotation,
+                          fliph: savedState.fliph,
+                          flipv: savedState.flipv,
+                          aura1_radius: savedState.aura1_radius ?? "",
+                          aura1_color: savedState.aura1_color ?? "transparent",
+                          aura1_square: savedState.aura1_square ?? false,
+                          aura2_radius: savedState.aura2_radius ?? "",
+                          aura2_color: savedState.aura2_color ?? "transparent",
+                          aura2_square: savedState.aura2_square ?? false,
+                          tint_color: savedState.tint_color ?? "transparent",
+                          statusmarkers: savedState.statusmarkers ?? "",
+                          bar1_value: savedState.bar1_value ?? null,
+                          bar1_max: savedState.bar1_max ?? null,
+                          bar2_value: savedState.bar2_value ?? null,
+                          bar2_max: savedState.bar2_max ?? null,
+                          bar3_value: savedState.bar3_value ?? null,
+                          bar3_max: savedState.bar3_max ?? null,
+                          light_radius: savedState.light_radius ?? "",
+                          light_dimradius: savedState.light_dimradius ?? "",
+                          light_otherplayers: savedState.light_otherplayers ?? false,
+                          light_hassight: savedState.light_hassight ?? false,
+                          light_angle: savedState.light_angle ?? "360",
+                          light_losangle: savedState.light_losangle ?? "360",
+                          light_multiplier: savedState.light_multiplier ?? "1",
+                          adv_fow_view_distance: savedState.adv_fow_view_distance ?? "",
+                         // imgsrc: savedState.imgsrc // Be cautious with imgsrc if tokens might be deleted/recreated
+                      });
+                       if (savedState.imgsrc && token.get('imgsrc') !== savedState.imgsrc) {
+                          changes.imgsrc = savedState.imgsrc; // Only set if different to avoid unnecessary changes
+                      }
+                  } else if (type === "pathv2") {
+                      Object.assign(changes, {
+                          path: savedState.path,
+                          fill: savedState.fill ?? "transparent",
+                          stroke: savedState.stroke ?? "#000000",
+                          stroke_width: savedState.stroke_width ?? 2,
+                          // Path position/size needs to be handled by TokenMod or direct left/top/width/height
+                          left: savedState.left, // Assuming these were captured for pathv2 as well
+                          top: savedState.top,
+                          width: savedState.width,
+                          height: savedState.height,
+                          scaleX: savedState.scaleX ?? 1,
+                          scaleY: savedState.scaleY ?? 1,
+                          rotation: savedState.rotation ?? 0
+                      });
+                  }
+                  token.set(changes);
+                  TrapSystem$2.utils.log(`Reset ${type} ${tokenID} to saved state.`, 'debug');
+                  resetCount++;
+              } else {
+                  TrapSystem$2.utils.log(`Token ${tokenID} not found during state reset.`, 'warn');
+              }
+          });
+
+          // Reset Doors/Windows (which are also captured in macroExportStates now if they were in macros)
+          // but we also have macroExportDoorStates for doors manipulated by !door commands specifically.
+          // Let's ensure these are also reset if they exist.
+          Object.keys(TrapSystem$2.state.macroExportDoorStates).forEach(doorID => {
+              let door = TrapSystem$2.utils.getObjectById(doorID);
+               if (door && (door.get("_type") === "door" || door.get("_type") === "window")) {
+                  let savedState = TrapSystem$2.state.macroExportDoorStates[doorID];
+                  // Only reset properties that were specifically captured for doors/windows
+                  let changes = {
+                      isOpen: savedState.isOpen,
+                      isLocked: savedState.isLocked,
+                      isSecret: savedState.isSecret
+                      // DO NOT attempt to set layer or other graphic-like properties here
+                      // as they were not captured for doors/windows in getObjectState to avoid errors.
+                  };
+                  door.set(changes);
+                  TrapSystem$2.utils.log(`Reset ${door.get("_type")} ${doorID} to saved minimal state (open/locked/secret).`, 'debug');
+                  resetCount++;
+              } else {
+                  TrapSystem$2.utils.log(`Door/Window ${doorID} not found during state reset.`, 'warn');
+              }
+          });
+
+
+          // Restore Z-ordering
+          if (TrapSystem$2.state.macroExportTokensOrderedToBack.length > 0) {
+              sendChat("API", `!token-mod --ids ${TrapSystem$2.state.macroExportTokensOrderedToBack.join(" ")} --order toback`);
+              TrapSystem$2.utils.log(`Sent TokenMod command to move ${TrapSystem$2.state.macroExportTokensOrderedToBack.length} token(s) to back.`, 'info');
+              resetCount++; // Count as one operation
+          }
+          if (TrapSystem$2.state.macroExportTokensOrderedToFront.length > 0) {
+              sendChat("API", `!token-mod --ids ${TrapSystem$2.state.macroExportTokensOrderedToFront.join(" ")} --order tofront`);
+              TrapSystem$2.utils.log(`Sent TokenMod command to move ${TrapSystem$2.state.macroExportTokensOrderedToFront.length} token(s) to front.`, 'info');
+              resetCount++; // Count as one operation
+          }
+
+          if (resetCount > 0) {
+              TrapSystem$2.utils.log(`Successfully reset ${resetCount} token/door states.`, 'success');
+          }
+          
+          // Clear the stored states after reset, similar to the old MacroExport script
+          TrapSystem$2.state.macroExportStates = {};
+          TrapSystem$2.state.macroExportDoorStates = {};
+          TrapSystem$2.state.macroExportTokensOrderedToFront = [];
+          TrapSystem$2.state.macroExportTokensOrderedToBack = [];
+          TrapSystem$2.state.macroExportRecordOrdering = false;
+          TrapSystem$2.utils.log("Cleared macro export states and stopped order recording after resetStates.", 'info');
+
+          return resetCount > 0;
+      },
+
+      resetMacros() {
+          if (TrapSystem$2.state.macroExportedMacros.length === 0) {
+              TrapSystem$2.utils.log("No exported macros to reset.", 'info');
+              return false;
+          }
+          TrapSystem$2.utils.log("Resetting macros to exported state...", 'info');
+          let resetCount = 0;
+          TrapSystem$2.state.macroExportedMacros.forEach(savedMacro => {
+              const currentMacro = getObj("macro", savedMacro.id); // Find by ID
+              if (currentMacro) {
+                  if (currentMacro.get("action") !== savedMacro.action) {
+                      currentMacro.set({ action: savedMacro.action });
+                      TrapSystem$2.utils.log(`Reset macro "${savedMacro.name}" (ID: ${savedMacro.id}).`, 'debug');
+                      resetCount++;
+                  }
+              } else {
+                  // Optionally, recreate the macro if it was deleted
+                  // createObj('macro', { name: savedMacro.name, action: savedMacro.action, playerid: /* GM's ID or original player */ });
+                  // For now, just log if not found.
+                  TrapSystem$2.utils.log(`Macro "${savedMacro.name}" (ID: ${savedMacro.id}) not found during reset. It might have been deleted.`, 'warn');
+              }
+          });
+          if (resetCount > 0) {
+              TrapSystem$2.utils.log(`Successfully reset ${resetCount} macros.`, 'success');
+          }
+          return resetCount > 0;
+      },
+
+      fullReset() {
+          TrapSystem$2.utils.log("Performing full reset of states and macros...", 'info');
+          const statesReset = this.resetTokenStates(); // This will now clear its specific states
+          const macrosReset = this.resetMacros();
+
+          // Also clear the exported macros themselves on a full reset
+          TrapSystem$2.state.macroExportedMacros = []; // Ensure this line is present
+          TrapSystem$2.utils.log("Cleared stored macro action list after full reset.", 'info'); // Clarified log
+
+          if (statesReset || macrosReset) {
+              sendChat("TrapSystem", "/w gm ✅ **Full reset complete!** States and macros restored to exported versions.");
+          } else {
+              sendChat("TrapSystem", "/w gm ℹ️ Full reset: No states or macros needed resetting or were available to reset.");
+          }
+          // resetTokenStates now handles setting macroExportRecordOrdering to false.
+          // The log about stopping recording is also fine here as a summary for fullReset.
+          TrapSystem$2.utils.log("Full reset concluded. Order recording is off.", 'info');
+      },
+
+      // --- Token Order Listening ---
+      processOrderCommand(msgContent) {
+          if (!TrapSystem$2.state.macroExportRecordOrdering) return;
+
+          let orderType = null;
+          if (msgContent.includes("--order tofront")) orderType = 'tofront';
+          else if (msgContent.includes("--order toback")) orderType = 'toback';
+
+          if (orderType) {
+              TrapSystem$2.utils.log(`Detected token-mod ${orderType} command: ${msgContent}`, 'debug');
+              const idsMatch = msgContent.match(/--ids\s+([^\s]+(?:\s+[^\s]+)*)/);
+              if (idsMatch && idsMatch[1]) {
+                  const tokenIDs = idsMatch[1].split(/\s+/);
+                  let targetArray = orderType === 'tofront' ?
+                      TrapSystem$2.state.macroExportTokensOrderedToFront :
+                      TrapSystem$2.state.macroExportTokensOrderedToBack;
+
+                  tokenIDs.forEach(id => {
+                      if (id.startsWith("@{") && id.endsWith("}")) return; // Skip placeholders
+
+                      // Add to the correct array, ensuring no duplicates within that array for this session
+                      if (targetArray.indexOf(id) === -1) {
+                          targetArray.push(id);
+                          TrapSystem$2.utils.log(`Marked token ${id} as moved ${orderType}.`, 'debug');
+                      }
+                      // Remove from the other array if it was there (e.g., moved to back then to front)
+                      let otherArray = orderType === 'tofront' ?
+                          TrapSystem$2.state.macroExportTokensOrderedToBack :
+                          TrapSystem$2.state.macroExportTokensOrderedToFront;
+                      const indexInOther = otherArray.indexOf(id);
+                      if (indexInOther > -1) {
+                          otherArray.splice(indexInOther, 1);
+                      }
+                  });
+              }
+          }
+      }
+  };
+
+  const macros = {
+    buildTagToIdMap,
+    replaceMacroPlaceholdersWithTags,
+    executeMacro,
+    executeTrapMacros,
+    exportTrapAsMacro,
+    exportMultipleTraps
+  };
+
   // src/trap-commands.js
   // Command parsing and API routing system for TrapSystem v2
 
+
+  // Create TrapSystem reference for compatibility
+  const TrapSystem$1 = {
+      utils: TrapUtils
+  };
 
   const Commands = {
       /**
@@ -2553,6 +3085,11 @@ var TrapSystem = (function (exports) {
        * @param {object} msg - The Roll20 chat message object
        */
       handleChatMessage(msg) {
+          // Process API commands for token ordering (for macro export system)
+          if (msg.type === "api" && msg.content.includes("!token-mod") && msg.content.includes("--order")) {
+              macroExport.processOrderCommand(msg.content);
+          }
+
           // Handle different message types
           if (msg.type === "advancedroll") {
               return this.handleAdvancedRoll(msg);
@@ -2719,16 +3256,32 @@ var TrapSystem = (function (exports) {
 
               // Export/Reset Commands
               case "exportmacros":
-                  this.handleExportMacros();
+                  if (!TrapSystem$1.utils.playerIsGM(msg.playerid)) {
+                      TrapSystem$1.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                      return;
+                  }
+                  macroExport.exportMacros();
                   break;
               case "resetstates":
-                  this.handleResetStates();
+                  if (!TrapSystem$1.utils.playerIsGM(msg.playerid)) {
+                      TrapSystem$1.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                      return;
+                  }
+                  macroExport.resetTokenStates();
                   break;
               case "resetmacros":
-                  this.handleResetMacros();
+                  if (!TrapSystem$1.utils.playerIsGM(msg.playerid)) {
+                      TrapSystem$1.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                      return;
+                  }
+                  macroExport.resetMacros();
                   break;
               case "fullreset":
-                  this.handleFullReset();
+                  if (!TrapSystem$1.utils.playerIsGM(msg.playerid)) {
+                      TrapSystem$1.utils.whisper(msg.playerid, "❌ Only GMs can use macro export commands.");
+                      return;
+                  }
+                  macroExport.fullReset();
                   break;
 
               // Help Command
@@ -3148,209 +3701,6 @@ var TrapSystem = (function (exports) {
       },
 
       /**
-       * Handle export macros command
-       */
-      handleExportMacros() {
-          // Get the macro exporter from global TrapSystem
-          const macroExporter = globalThis.TrapSystem?.macroExporter;
-          if (macroExporter && typeof macroExporter.exportMacros === 'function') {
-              macroExporter.exportMacros();
-          } else {
-              TrapUtils.chat('❌ Macro export system not available');
-          }
-      },
-
-      /**
-       * Handle reset states command
-       */
-      handleResetStates() {
-          // Get the macro exporter from global TrapSystem
-          const macroExporter = globalThis.TrapSystem?.macroExporter;
-          if (macroExporter && typeof macroExporter.resetTokenStates === 'function') {
-              if (macroExporter.resetTokenStates()) {
-                  sendChat("TrapSystem", "/w gm ✅ States reset to exported versions.");
-              } else {
-                  sendChat("TrapSystem", "/w gm ℹ️ No states needed resetting or were available to reset.");
-              }
-              Config.state.macroExportRecordOrdering = false;
-          } else {
-              TrapUtils.chat('❌ Macro export system not available');
-          }
-      },
-
-      /**
-       * Handle reset macros command
-       */
-      handleResetMacros() {
-          // Get the macro exporter from global TrapSystem
-          const macroExporter = globalThis.TrapSystem?.macroExporter;
-          if (macroExporter && typeof macroExporter.resetMacros === 'function') {
-              if (macroExporter.resetMacros()) {
-                  sendChat("TrapSystem", "/w gm ✅ Macros reset to exported actions.");
-              } else {
-                  sendChat("TrapSystem", "/w gm ℹ️ No macros needed resetting or were available to reset.");
-              }
-          } else {
-              TrapUtils.chat('❌ Macro export system not available');
-          }
-      },
-
-      /**
-       * Handle full reset command
-       */
-      handleFullReset() {
-          // Get the macro exporter from global TrapSystem
-          const macroExporter = globalThis.TrapSystem?.macroExporter;
-          if (macroExporter && typeof macroExporter.fullReset === 'function') {
-              macroExporter.fullReset();
-          } else {
-              TrapUtils.chat('❌ Macro export system not available');
-          }
-      },
-
-      /**
-       * Handle advanced roll results from character sheets
-       */
-      handleAdvancedRoll(msg) {
-          try {
-              TrapUtils.log(`Received advancedroll message: ${JSON.stringify(msg)}`, 'debug');
-              let rollType = null;
-              if (msg.content.includes("dnd-2024__header--Advantage")) rollType = "advantage";
-              if (msg.content.includes("dnd-2024__header--Disadvantage")) rollType = "disadvantage";
-              if (msg.content.includes("dnd-2024__header--Normal")) rollType = "normal";
-
-              const re = /die__total[^>]*(?:data-result="(\d+)")?[^>]*>\s*(\d+)\s*</g;
-              let dieMatches = msg.content.match(re);
-              let dieResults = [];
-              
-              if (dieMatches) {
-                  dieMatches.forEach(m => {
-                      let dr = m.match(/data-result="(\d+)"/);
-                      let tr = m.match(/>\s*(\d+)\s*</);
-                      if (dr) dieResults.push(parseInt(dr[1], 10));
-                      else if (tr) dieResults.push(parseInt(tr[1], 10));
-                  });
-              }
-
-              if (dieResults.length > 0) {
-                  let pending = null;
-                  if (msg.characterId) {
-                      pending = Config.state.pendingChecksByChar[msg.characterId];
-                      if (pending) {
-                          TrapUtils.log(`Found pending check by character ID: ${msg.characterId}`, 'debug');
-                      }
-                  }
-                  
-                  if (!pending) {
-                      pending = Config.state.pendingChecks[msg.playerid];
-                      if (pending) {
-                          TrapUtils.log(`Found pending check by player ID: ${msg.playerid}`, 'debug');
-                      }
-                  }
-
-                  if (!pending) {
-                      TrapUtils.log(`No pending check found for player:${msg.playerid} or character:${msg.characterId} from advancedroll`, 'debug');
-                      return;
-                  }
-
-                  let total;
-                  const pref = msg.content.match(/die__total--preferred[^>]*data-result="(\d+)"/);
-                  if (pref) {
-                      total = parseInt(pref[1], 10);
-                  } else if (dieResults.length >= 2 && rollType) {
-                      if (rollType === "advantage") total = Math.max(...dieResults);
-                      else if (rollType === "disadvantage") total = Math.min(...dieResults);
-                      else total = dieResults[0];
-                  } else {
-                      total = dieResults[0];
-                  }
-
-                  let rolledSkillName = null;
-                  const titleMatch = msg.content.match(/<div class=\"header__title\">([^<]+)(?: Check| Save)?<\/div>/);
-                  if (titleMatch && titleMatch[1]) {
-                      rolledSkillName = titleMatch[1].trim();
-                      TrapUtils.log(`Extracted rolled skill/ability from advancedroll: ${rolledSkillName}`, 'debug');
-                  }
-
-                  const rollData = {
-                      total,
-                      firstRoll: dieResults[0],
-                      secondRoll: dieResults[1],
-                      isAdvantageRoll: (dieResults.length >= 2),
-                      rollType,
-                      characterid: msg.characterId,
-                      playerid: msg.playerid,
-                      rolledSkillName
-                  };
-                  
-                  TrapUtils.log(`Processed advancedroll data: ${JSON.stringify(rollData)}`, 'debug');
-                  
-                  // Get the interaction system from global TrapSystem
-                  const interactionSystem = globalThis.TrapSystem?.menu;
-                  if (interactionSystem && typeof interactionSystem.handleRollResult === 'function') {
-                      interactionSystem.handleRollResult(rollData, msg.playerid);
-                  }
-              }
-          } catch (e) {
-              TrapUtils.log(`Error in advancedroll parse: ${e.message}`, 'error');
-          }
-      },
-
-      /**
-       * Handle simple roll results
-       */
-      handleRollResult(msg) {
-          try {
-              TrapUtils.log(`Received rollresult message: ${JSON.stringify(msg)}`, 'debug');
-              const r = JSON.parse(msg.content);
-              let rollTotal = null;
-
-              if (r && typeof r.total !== 'undefined') {
-                  rollTotal = r.total;
-              } else if (r && r.rolls && r.rolls.length > 0 && r.rolls[0].results && r.rolls[0].results.length > 0 && typeof r.rolls[0].results[0].v !== 'undefined') {
-                  rollTotal = r.rolls[0].results[0].v;
-              }
-
-              if (rollTotal !== null) {
-                  const rollData = {
-                      total: rollTotal,
-                      playerid: msg.playerid
-                  };
-
-                  let charIdFromRoll = r.characterid || (r.rolls && r.rolls[0] && r.rolls[0].characterid);
-
-                  if (!charIdFromRoll && !TrapUtils.playerIsGM(msg.playerid)) {
-                      const allCharacters = findObjs({ _type: "character" });
-                      const controlledPlayerCharacters = allCharacters.filter(char => {
-                          const controlledByArray = (char.get("controlledby") || "").split(",");
-                          return controlledByArray.includes(msg.playerid) && controlledByArray.some(pId => pId && pId.trim() !== "" && !TrapUtils.playerIsGM(pId));
-                      });
-
-                      if (controlledPlayerCharacters.length === 1) {
-                          const uniqueChar = controlledPlayerCharacters[0];
-                          rollData.characterid = uniqueChar.id;
-                          TrapUtils.log(`Flat roll by player ${msg.playerid} auto-associated with single controlled character ${uniqueChar.get('name')} (ID: ${uniqueChar.id}) for rollData.`, 'debug');
-                      }
-                  } else if (charIdFromRoll) {
-                      rollData.characterid = charIdFromRoll;
-                  }
-
-                  TrapUtils.log(`Processed rollresult. Sending to handleRollResult: ${JSON.stringify(rollData)}`, 'debug');
-                  
-                  // Get the interaction system from global TrapSystem
-                  const interactionSystem = globalThis.TrapSystem?.menu;
-                  if (interactionSystem && typeof interactionSystem.handleRollResult === 'function') {
-                      interactionSystem.handleRollResult(rollData, msg.playerid);
-                  }
-              } else {
-                  TrapUtils.log(`Could not parse total from rollresult: ${msg.content}`, 'warning');
-              }
-          } catch (e) {
-              TrapUtils.log(`Error in rollresult parse: ${e.message}`, 'error');
-          }
-      },
-
-      /**
        * Show the help menu
        */
       showHelpMenu(target = 'API') {
@@ -3377,6 +3727,12 @@ var TrapSystem = (function (exports) {
               '[🙈 Hide Detections](!trapsystem hidedetection ?{Minutes - 0 for indefinitely|0}) - Hide all detection auras (0 = indefinitely)\n',
               '[👁️ Show Detections](!trapsystem showdetection) - Show all detection auras\n',
               '[🛡️ Toggle Immunity](!trapsystem ignoretraps) - Toggle token to ignore traps}}',
+              '{{🔄 **Export/Reset Commands**=',
+              '[Export Macros](!trapsystem exportmacros) - Capture current macro states and token positions',
+              '[Reset States](!trapsystem resetstates) - Reset tokens/doors to exported positions',  
+              '[Reset Macros](!trapsystem resetmacros) - Reset macro actions to exported versions',
+              '[Full Reset](!trapsystem fullreset) - Reset both states and macros completely',
+              '}}',
               '{{Tips=',
               '• <b style="color:#f04747;">Macro Types:</b> Actions can be a Roll20 Macro <span style="color:#ffcb05">#MacroName</span>, an API command <span style="color:#ffcb05">"!command"</span>, or plain chat <span style="color:#ffcb05">"text message"</span>.<br>',
               '• <b style="color:#f04747;">Workarounds:</b> To use API commands or templates in setup, you MUST disguise them. Use <span style="color:#ffcb05">$</span> for commands e.g., <span style="color:#ffcb05">"$deal-damage"</span> and <span style="color:#ffcb05">^</span> for templates e.g., <span style="color:#ffcb05">"^｛template:default｝..."</span>.<br>',
@@ -4216,151 +4572,6 @@ var TrapSystem = (function (exports) {
     showGMResponseMenu,
     handleAllowAction,
     handleFailAction
-  };
-
-  // src/trap-macros.js
-  // Macro execution & export logic
-
-
-  // Build a tag-to-ID mapping for macro placeholder replacement
-  function buildTagToIdMap(tokens = []) {
-    const tagMap = {};
-    tokens.forEach(token => {
-      if (!token) return;
-      const name = token.get('name') || '';
-      if (name.trim()) {
-        const tag = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (tag) tagMap[tag] = token.id;
-      }
-    });
-    return tagMap;
-  }
-
-  // Replace macro placeholders with actual token IDs
-  function replaceMacroPlaceholdersWithTags(macroString, tagMap = {}) {
-    if (!macroString || typeof macroString !== 'string') return macroString;
-    
-    let processed = macroString;
-    
-    // Replace @{target|...} patterns
-    processed = processed.replace(/@\{target\|([^}]+)\}/g, (match, property) => {
-      return `@{target|${property}}`;
-    });
-    
-    // Replace @{selected|...} patterns  
-    processed = processed.replace(/@\{selected\|([^}]+)\}/g, (match, property) => {
-      return `@{selected|${property}}`;
-    });
-    
-    // Replace custom tags like @{goblin|token_id}
-    Object.keys(tagMap).forEach(tag => {
-      const regex = new RegExp(`@\\{${tag}\\|([^}]+)\\}`, 'gi');
-      processed = processed.replace(regex, (match, property) => {
-        if (property === 'token_id') {
-          return tagMap[tag];
-        }
-        return `@{${tagMap[tag]}|${property}}`;
-      });
-    });
-    
-    return processed;
-  }
-
-  // Execute a macro string (delegates to Roll20's sendChat)
-  function executeMacro(macroString, characterName = 'TrapSystem') {
-    if (!macroString || typeof macroString !== 'string') {
-      TrapUtils.log('Cannot execute empty macro', 'error');
-      return false;
-    }
-    
-    try {
-      // Handle different macro types
-      if (macroString.startsWith('#')) {
-        // Roll20 macro - remove # and execute
-        const macroName = macroString.slice(1);
-        sendChat(characterName, `#${macroName}`);
-      } else if (macroString.startsWith('!')) {
-        // API command
-        sendChat(characterName, macroString);
-      } else if (macroString.startsWith('&{')) {
-        // Roll template
-        sendChat(characterName, macroString);
-      } else {
-        // Regular chat message
-        sendChat(characterName, macroString);
-      }
-      
-      TrapUtils.log(`Executed macro: ${TrapUtils.getSafeMacroDisplayName(macroString)}`, 'success');
-      return true;
-    } catch (error) {
-      TrapUtils.log(`Macro execution failed: ${error.message}`, 'error');
-      return false;
-    }
-  }
-
-  // Process and execute trap macros with token context
-  function executeTrapMacros(trapToken, macroList = [], targetTokens = []) {
-    if (!trapToken || !Array.isArray(macroList)) return;
-    
-    const tagMap = buildTagToIdMap([trapToken, ...targetTokens]);
-    
-    macroList.forEach((macro, index) => {
-      if (!macro) return;
-      
-      const processedMacro = replaceMacroPlaceholdersWithTags(macro, tagMap);
-      
-      // Add a small delay between macros to prevent spam
-      setTimeout(() => {
-        executeMacro(processedMacro, trapToken.get('name') || 'Trap');
-      }, index * 100);
-    });
-  }
-
-  // Export trap configuration as a macro
-  function exportTrapAsMacro(trapToken) {
-    if (!TrapUtils.validateTrapToken(trapToken, 'exportTrapAsMacro')) return null;
-    
-    const legacyUtils = globalThis.TrapSystem && globalThis.TrapSystem.utils;
-    if (!legacyUtils || typeof legacyUtils.parseTrapNotes !== 'function') {
-      TrapUtils.log('Legacy utilities not available for export', 'error');
-      return null;
-    }
-    
-    const trapData = legacyUtils.parseTrapNotes(trapToken.get('gmnotes'), trapToken);
-    if (!trapData) {
-      TrapUtils.log('Invalid trap configuration for export', 'error');
-      return null;
-    }
-    
-    // Generate macro command to recreate this trap
-    const macroCommand = `!trapsystem create-trap --name "${trapData.name || 'Exported Trap'}" --trigger "${trapData.triggerType || 'movement'}" --dc ${trapData.dc || 15}`;
-    
-    return {
-      name: `Create: ${trapData.name || 'Trap'}`,
-      command: macroCommand,
-      description: `Creates a trap: ${trapData.name || 'Unnamed'}`
-    };
-  }
-
-  // Batch export multiple traps
-  function exportMultipleTraps(trapTokens = []) {
-    const exports = [];
-    
-    trapTokens.forEach(token => {
-      const exported = exportTrapAsMacro(token);
-      if (exported) exports.push(exported);
-    });
-    
-    return exports;
-  }
-
-  const macros = {
-    buildTagToIdMap,
-    replaceMacroPlaceholdersWithTags,
-    executeMacro,
-    executeTrapMacros,
-    exportTrapAsMacro,
-    exportMultipleTraps
   };
 
   // Entry point that stitches the modular files together.

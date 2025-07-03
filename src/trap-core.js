@@ -86,7 +86,13 @@ export const State = {
   passivelyNoticedTraps: {},
   recentlyNoticedPlayerMessages: {},
   detectionAurasTemporarilyHidden: false,
-  hideAurasTimeout: null
+  hideAurasTimeout: null,
+  macroExportedMacros: [],
+  macroExportStates: {},
+  macroExportDoorStates: {},
+  macroExportTokensOrderedToFront: [],
+  macroExportTokensOrderedToBack: [],
+  macroExportRecordOrdering: false
 };
 
 export const core = {
