@@ -253,11 +253,11 @@ const TrapSystem = {
 
         decodeHtml(text) {
             if (typeof text !== 'string') return text;
-            return text.replace(/&lt;/g, '<')
+            return text.replace(/&amp;/g, '&')
+                       .replace(/&lt;/g, '<')
                        .replace(/&gt;/g, '>')
                        .replace(/&quot;/g, '"')
-                       .replace(/&#39;/g, "'")
-                       .replace(/&amp;/g, '&');
+                       .replace(/&#39;/g, "'");
         },
 
         // Return a sanitized token image URL or a fallback icon
