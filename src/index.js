@@ -5,12 +5,12 @@ import { Config } from './trap-core.js';
 import TrapUtils from './trap-utils.js';
 import { triggers } from './trap-triggers.js';
 import { MovementDetector } from './trap-detector.js';
+import { PassiveDetection } from './trap-detection.js';
 
 // Placeholder imports – these modules will gradually be filled out.
 import './trap-core.js';
 import './trap-utils.js';
 import detector from './trap-detector.js';
-import passiveDetection from './trap-detection.js';
 import interactionSystem from './trap-interaction.js';
 import macroSystem from './trap-macros.js';
 import uiSystem from './trap-ui.js';
@@ -23,7 +23,7 @@ const TrapSystem = {
   core: { Config, state: Config.state },
   detection: {
     movement: detector,
-    passive: passiveDetection
+    passive: PassiveDetection
   },
   macros: macroSystem,
   ui: uiSystem
@@ -34,6 +34,7 @@ globalThis.TrapSystemV2 = {
     Config,
     TrapUtils,
     triggers,
+    PassiveDetection,
     interactionSystem,
     MovementDetector
 };
@@ -45,7 +46,8 @@ globalThis.TrapSystem = {
     utils: TrapUtils,
     triggers: triggers,
     menu: interactionSystem,
-    detector: MovementDetector
+    detector: MovementDetector,
+    passive: PassiveDetection
 };
 
 console.log('📦 TrapSystem v2 scaffold loaded');

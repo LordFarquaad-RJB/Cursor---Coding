@@ -148,6 +148,19 @@ export const MovementDetector = {
     },
 
     /**
+     * Run passive detection checks for a token that moved
+     * This should be called whenever a token moves to check for passive trap detection
+     * @param {object} movedToken - The token that moved
+     */
+    async runPassiveChecks(movedToken) {
+        // Get the passive detection system from the global TrapSystem
+        const passiveSystem = globalThis.TrapSystem?.passive;
+        if (passiveSystem && typeof passiveSystem.runPassiveChecksForToken === 'function') {
+            await passiveSystem.runPassiveChecksForToken(movedToken);
+        }
+    },
+
+    /**
      * Handle when a trap is triggered - placeholder that will call the appropriate trigger system
      * @param {object} triggeredToken - The token that triggered the trap
      * @param {object} trapToken - The trap token

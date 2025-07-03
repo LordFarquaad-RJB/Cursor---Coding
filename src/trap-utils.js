@@ -143,6 +143,80 @@ export function getTokenImageURL(token, size = 'med') {
   return sanitized || '👤';
 }
 
+// Build a tag-to-ID map for macro replacement
+export function buildTagToIdMap(trapToken, trappedToken, extraTokens) {
+  const map = {};
+  if (trapToken) map.trap = trapToken.id || trapToken;
+  if (trappedToken) map.trapped = trappedToken.id || trappedToken;
+  if (extraTokens && typeof extraTokens === 'object') {
+    Object.keys(extraTokens).forEach(tag => {
+      const val = extraTokens[tag];
+      map[tag] = val && val.id ? val.id : val;
+    });
+  }
+  return map;
+}
+
+// Execute a macro with tag replacement
+export function executeMacro(commandString, tagToIdMap = {}) {
+  if (!commandString || typeof commandString !== 'string') return false;
+  
+  let processedCommand = commandString.trim();
+  
+  // Handle macro references (#MacroName)
+  if (processedCommand.startsWith('#')) {
+    const macroName = processedCommand.substring(1);
+    const macro = findObjs({ _type: 'macro', name: macroName })[0];
+    if (macro) {
+      processedCommand = macro.get('action');
+    } else {
+      log(`Macro "${macroName}" not found`, 'error');
+      return false;
+    }
+  }
+  
+  // Handle disguised commands ($command -> !command)
+  if (processedCommand.startsWith('$')) {
+    processedCommand = '!' + processedCommand.substring(1);
+  }
+  
+  // Handle disguised templates (^{template} -> &{template})
+  if (processedCommand.startsWith('^')) {
+    processedCommand = '&' + processedCommand.substring(1);
+  }
+  
+  // Replace tags with IDs
+  for (const [tag, tokenId] of Object.entries(tagToIdMap)) {
+    if (tokenId) {
+      const tagRegex = new RegExp(`<&${tag}>`, 'g');
+      processedCommand = processedCommand.replace(tagRegex, tokenId);
+    }
+  }
+  
+  // Remove quotes if the entire command is wrapped in them
+  if (processedCommand.startsWith('"') && processedCommand.endsWith('"')) {
+    processedCommand = processedCommand.slice(1, -1);
+  }
+  
+  try {
+    // Execute the command
+    if (processedCommand.startsWith('!')) {
+      // API command
+      sendChat('TrapSystem', processedCommand);
+    } else if (processedCommand.startsWith('&{template:')) {
+      // Roll template
+      sendChat('TrapSystem', processedCommand);
+    } else {
+      // Plain text
+      sendChat('TrapSystem', processedCommand);
+    }
+    return true;
+  } catch (error) {
+    log(`Error executing macro: ${error.message}`, 'error');
+    return false;
+  }
+}
+
 // Merge into export object
 Object.assign(TrapUtils, {
   playerIsGM,
@@ -151,7 +225,9 @@ Object.assign(TrapUtils, {
   whisper,
   decodeHtml,
   isTrap,
-  getTokenImageURL
+  getTokenImageURL,
+  buildTagToIdMap,
+  executeMacro
 });
 
 // ------------------------------------------------------------------
@@ -324,74 +400,115 @@ export function parseTrapNotes(rawNotes, token = null) {
   decoded = decoded.replace(/<br\s*\/?>/gi, ' ').replace(/\n/g, ' ').trim();
 
   // Look for the first {!traptrigger …} block
-  const m = decoded.match(/\{!traptrigger\s+([^}]*)\}/i);
-  if (!m) return null;
-  const body = m[1];
-  const getSetting = key => {
+  const triggerMatch = decoded.match(/\{!traptrigger\s+([^}]*)\}/i);
+  const detectionMatch = decoded.match(/\{!trapdetection\s+([^}]*)\}/i);
+  
+  if (!triggerMatch && !detectionMatch) return null;
+  
+  const getSetting = (body, key) => {
     const s = new RegExp(`${key}:\\s*\\[([^\\]]*)\\]`, 'i').exec(body);
     return s ? s[1].trim() : null;
   };
   
-  const type = getSetting('type') || 'standard';
-  const usesStr = getSetting('uses') || '0/0';
-  const usesParts = usesStr.match(/(\d+)\/(\d+)/) || [0, 0, 0];
-  const currentUses = parseInt(usesParts[1], 10);
-  const maxUses = parseInt(usesParts[2], 10);
-  const armed = (getSetting('armed') || 'on').toLowerCase() === 'on';
-  
-  // Extract macros
-  const primaryMacro = getSetting('primaryMacro');
-  const successMacro = getSetting('successMacro');
-  const failureMacro = getSetting('failureMacro');
-  const optionsStr = getSetting('options');
-  const options = optionsStr ? optionsStr.split(';').map(opt => ({ macro: opt.trim() })).filter(o => o.macro) : [];
-  
-  // Extract checks
-  const checksStr = getSetting('checks');
-  const checks = checksStr ? checksStr.split(';').map(chk => {
-    const parts = chk.split(':');
-    return parts.length === 2 ? { type: parts[0].trim(), dc: parseInt(parts[1], 10) } : null;
-  }).filter(Boolean) : [];
-  
-  // Extract position
-  const posStr = getSetting('position') || 'intersection';
-  let position = posStr;
-  const coordMatch = posStr.match(/(\d+)\s*,\s*(\d+)/);
-  if (coordMatch) position = { x: parseInt(coordMatch[1], 10), y: parseInt(coordMatch[2], 10) };
-  
-  // Extract flags
-  const movementTrigger = (getSetting('movementTrigger') || 'on').toLowerCase() === 'on';
-  const autoTrigger = (getSetting('autoTrigger') || 'off').toLowerCase() === 'on';
-
-  const data = {
-    type,
-    currentUses,
-    maxUses,
-    isArmed: armed,
-    primaryMacro: primaryMacro ? { macro: primaryMacro } : null,
-    successMacro,
-    failureMacro,
-    options,
-    checks,
-    position,
-    movementTrigger,
-    autoTrigger,
-    raw: decoded
+  // Parse trigger block
+  let trapData = {
+    type: 'standard',
+    currentUses: 0,
+    maxUses: 0,
+    isArmed: true,
+    primaryMacro: null,
+    successMacro: null,
+    failureMacro: null,
+    options: [],
+    checks: [],
+    position: 'intersection',
+    movementTrigger: true,
+    autoTrigger: false,
+    // Detection properties
+    isPassive: false,
+    passiveSpotDC: null,
+    passiveMaxRange: null,
+    passiveNoticePlayer: null,
+    passiveNoticeGM: null,
+    ppTokenBarFallback: null,
+    enableLuckRoll: false,
+    luckRollDie: '1d6',
+    showDetectionAura: false,
+    passiveEnabled: true,
+    detected: false
   };
+  
+  if (triggerMatch) {
+    const triggerBody = triggerMatch[1];
+    trapData.type = getSetting(triggerBody, 'type') || 'standard';
+    
+    const usesStr = getSetting(triggerBody, 'uses') || '0/0';
+    const usesParts = usesStr.match(/(\d+)\/(\d+)/) || [0, 0, 0];
+    trapData.currentUses = parseInt(usesParts[1], 10);
+    trapData.maxUses = parseInt(usesParts[2], 10);
+    trapData.isArmed = (getSetting(triggerBody, 'armed') || 'on').toLowerCase() === 'on';
+    
+    // Extract macros
+    const primaryMacro = getSetting(triggerBody, 'primaryMacro');
+    trapData.primaryMacro = primaryMacro ? { macro: primaryMacro } : null;
+    trapData.successMacro = getSetting(triggerBody, 'successMacro');
+    trapData.failureMacro = getSetting(triggerBody, 'failureMacro');
+    
+    const optionsStr = getSetting(triggerBody, 'options');
+    trapData.options = optionsStr ? optionsStr.split(';').map(opt => ({ macro: opt.trim() })).filter(o => o.macro) : [];
+    
+    // Extract checks
+    const checksStr = getSetting(triggerBody, 'checks');
+    trapData.checks = checksStr ? checksStr.split(';').map(chk => {
+      const parts = chk.split(':');
+      return parts.length === 2 ? { type: parts[0].trim(), dc: parseInt(parts[1], 10) } : null;
+    }).filter(Boolean) : [];
+    
+    // Extract position
+    const posStr = getSetting(triggerBody, 'position') || 'intersection';
+    trapData.position = posStr;
+    const coordMatch = posStr.match(/(\d+)\s*,\s*(\d+)/);
+    if (coordMatch) trapData.position = { x: parseInt(coordMatch[1], 10), y: parseInt(coordMatch[2], 10) };
+    
+    // Extract flags
+    trapData.movementTrigger = (getSetting(triggerBody, 'movementTrigger') || 'on').toLowerCase() === 'on';
+    trapData.autoTrigger = (getSetting(triggerBody, 'autoTrigger') || 'off').toLowerCase() === 'on';
+  }
+  
+  // Parse detection block
+  if (detectionMatch) {
+    const detectionBody = detectionMatch[1];
+    trapData.isPassive = true;
+    
+    const dc = parseInt(getSetting(detectionBody, 'passiveSpotDC'), 10);
+    trapData.passiveSpotDC = isNaN(dc) ? null : dc;
+    
+    const range = parseFloat(getSetting(detectionBody, 'passiveMaxRange'));
+    trapData.passiveMaxRange = isNaN(range) ? null : range;
+    
+    trapData.passiveNoticePlayer = getSetting(detectionBody, 'passiveNoticePlayer');
+    trapData.passiveNoticeGM = getSetting(detectionBody, 'passiveNoticeGM');
+    trapData.ppTokenBarFallback = getSetting(detectionBody, 'ppTokenBarFallback');
+    trapData.enableLuckRoll = (getSetting(detectionBody, 'enableLuckRoll') || 'false').toLowerCase() === 'true';
+    trapData.luckRollDie = getSetting(detectionBody, 'luckRollDie') || '1d6';
+    trapData.showDetectionAura = (getSetting(detectionBody, 'showDetectionAura') || 'false').toLowerCase() === 'true';
+    trapData.passiveEnabled = (getSetting(detectionBody, 'passiveEnabled') || 'on').toLowerCase() === 'on';
+    trapData.detected = (getSetting(detectionBody, 'detected') || 'off').toLowerCase() === 'on';
+  }
 
   // Minimal visual sync (update aura) if token provided
   if (token) {
-    const color = armed ? Config.AURA_COLORS.ARMED : Config.AURA_COLORS.DISARMED;
+    const color = trapData.isArmed ? Config.AURA_COLORS.ARMED : Config.AURA_COLORS.DISARMED;
     token.set({
       aura1_color: color,
       aura1_radius: calculateDynamicAuraRadius(token),
       showplayers_aura1: false,
-      bar1_value: currentUses,
-      bar1_max: maxUses,
+      bar1_value: trapData.currentUses,
+      bar1_max: trapData.maxUses,
       showplayers_bar1: false
     });
   }
-  return data;
+  return trapData;
 }
 
 export function calculateDynamicAuraRadius(token) {
