@@ -2792,7 +2792,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape
             };
 
             let parts = [
