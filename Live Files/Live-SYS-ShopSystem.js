@@ -612,7 +612,13 @@ const ShopSystem = {
             return new Promise((resolve, reject) => {
                 handout.get("notes", function(notes) {
                     try {
-                        let cleanedNotes = notes.replace(/<[^>]*>/g, '');
+                        let cleanedNotes = notes;
+                        let lastCleaned;
+                        do {
+                            lastCleaned = cleanedNotes;
+                            cleanedNotes = cleanedNotes.replace(/<[^>]*>/g, '');
+                        } while (cleanedNotes !== lastCleaned);
+                        
                         cleanedNotes = cleanedNotes.replace(/&quot;/g, '"');
                         cleanedNotes = cleanedNotes.replace(/&amp;/g, '&');
                         cleanedNotes = cleanedNotes.replace(/&lt;/g, '<');
@@ -632,7 +638,13 @@ const ShopSystem = {
         cleanHandoutNotes(notes) {
             if (!notes) return "";
             
-            let cleanedNotes = notes.replace(/<[^>]*>/g, '');
+            let cleanedNotes = notes;
+            let lastCleaned;
+            do {
+                lastCleaned = cleanedNotes;
+                cleanedNotes = cleanedNotes.replace(/<[^>]*>/g, '');
+            } while (cleanedNotes !== lastCleaned);
+
             cleanedNotes = cleanedNotes.replace(/&quot;/g, '"');
             cleanedNotes = cleanedNotes.replace(/&amp;/g, '&');
             cleanedNotes = cleanedNotes.replace(/&lt;/g, '<');
