@@ -1648,8 +1648,8 @@ const TrapSystem = {
                 if (typeof value !== 'string') return value;
                 // Only wrap if it contains special characters and is not already a safe command/macro
                 if (value.includes('[') || value.includes(']')) {
-                    // Escape any pre-existing double quotes before wrapping
-                    const escapedValue = value.replace(/"/g, '\\"');
+                    // Escape any pre-existing backslashes and double quotes before wrapping
+                    const escapedValue = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
                     return `"${escapedValue}"`;
                 }
                 return value;
