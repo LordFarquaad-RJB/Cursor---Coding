@@ -1,0 +1,12 @@
+{
+  "name": "trapsystem",
+  "version": "2.0.0",
+  "description": "TrapSystem v2 modular source",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c"
+  },
+  "devDependencies": {
+    "rollup": "^4.0.0"
+  }
+}
