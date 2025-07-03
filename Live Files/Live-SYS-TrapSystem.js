@@ -2648,7 +2648,9 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Escape backslashes and double quotes, then quote
+
+                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape backslashes and double quotes
+
             };
 
             const primaryMacroProcessed = processMacro(mainMacro);
