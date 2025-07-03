@@ -615,10 +615,10 @@ const ShopSystem = {
                     try {
                         let cleanedNotes = notes.replace(/<[^>]*>/g, '');
                         cleanedNotes = cleanedNotes.replace(/&quot;/g, '"');
+                        cleanedNotes = cleanedNotes.replace(/&amp;/g, '&');
                         cleanedNotes = cleanedNotes.replace(/&lt;/g, '<');
                         cleanedNotes = cleanedNotes.replace(/&gt;/g, '>');
                         cleanedNotes = cleanedNotes.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
-                        cleanedNotes = cleanedNotes.replace(/&amp;/g, '&');
                         
                         const data = JSON.parse(cleanedNotes);
                         resolve(data && (!expectedType || data.type === expectedType));
