@@ -16,7 +16,7 @@ Controls dynamic lighting walls, doors and toggling darkness. The help section l
 !door all_on_page lock
 !lc toggledarkness circle 3 --id room_torch
 ```
-These examples come from the built‑in help menu【F:Live Files/Live-CTRL-LightControl.js†L58-L77】.
+These examples come from the built-in help menu.
 
 ### TokenFX
 Spawns complex visual effects with timing and targeting options. Example usage from the documentation:
@@ -25,22 +25,22 @@ Spawns complex visual effects with timing and targeting options. Example usage f
 !spawnComplexFx FX[beam] CLR[fire] ID[source] TARGET[destination]
 !delay 2 {command}
 ```
-See the detailed comments for more options【F:Live Files/Live-CTRL-TokenFX.js†L45-L72】【F:Live Files/Live-CTRL-TokenFX.js†L260-L276】. Additional examples and commands are available in the script's help menu【F:Live Files/Live-CTRL-TokenFX.js†L840-L875】.
+See the detailed comments for more options. Additional examples and commands are available in the script's help menu.
 
 ### TriggerControl
 Automates actions from rollable tables and at the start of a token's turn. The header explains the format:
 ```
 [TOT: once,gm] &{template:default} {{name=Secret Effect}} {{text=Hidden message}}
 ```
-Available commands include `!tt-reset`, `!tt-debug` and `!rtm` as documented in the comment block【F:Live Files/Live-CTRL-TriggerControl.js†L1-L55】.
+Available commands include `!tt-reset`, `!tt-debug` and `!rtm` as documented in the comment block.
 
 ### CommandMenu
-Provides an in‑game control panel. Use `!menu` followed by a section name or `help` to open different menus:
+Provides an in-game control panel. Use `!menu` followed by a section name or `help` to open different menus:
 ```
 !menu traps
 !menu help
 ```
-Handling of the `!menu` command is shown around the chat handler【F:Live Files/Live-CommandMenu.js†L604-L621】.
+Handling of the `!menu` command is shown around the chat handler.
 
 ### ShopSystem
 A D&D 5e shop manager with item databases and haggling. The shop help menu lists quick commands:
@@ -49,7 +49,7 @@ A D&D 5e shop manager with item databases and haggling. The shop help menu lists
 !shop basket view
 !shop help
 ```
-These lines appear in the shop help output【F:Live Files/Live-SYS-ShopSystem.js†L3428-L3437】.
+These lines appear in the shop help output.
 
 ### TrapSystem
 Manages traps, detection auras and interaction menus. Its help menu provides setup and control commands such as:
@@ -60,7 +60,7 @@ Manages traps, detection auras and interaction menus. Its help menu provides set
 !trapsystem status
 !trapsystem enable / !trapsystem disable
 ```
-See the extensive help block for full details【F:Live Files/Live-SYS-TrapSystem.js†L1182-L1201】.
+See the extensive help block for full details.
 
 ---
 Each script includes additional options and configuration settings within the code comments.
