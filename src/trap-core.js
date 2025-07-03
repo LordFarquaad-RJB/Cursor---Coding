@@ -60,7 +60,12 @@ export const Config = {
 
 // Simple central state store (will be fleshed out later)
 export const State = {
-  warnedInvalidGridPages: {}
+  warnedInvalidGridPages: {},
+  pendingChecks: {},           // GM playerid -> pending check data
+  pendingChecksByChar: {},     // character id -> pending check data  
+  displayDCForCheck: {},       // playerid -> boolean (show DC in menus)
+  lockedTokens: {},           // token id -> lock data
+  triggersEnabled: true       // global trigger state
 };
 
 export const core = {

@@ -63,7 +63,12 @@ var TrapSystem = (function (exports) {
 
   // Simple central state store (will be fleshed out later)
   const State = {
-    warnedInvalidGridPages: {}
+    warnedInvalidGridPages: {},
+    pendingChecks: {},           // GM playerid -> pending check data
+    pendingChecksByChar: {},     // character id -> pending check data  
+    displayDCForCheck: {},       // playerid -> boolean (show DC in menus)
+    lockedTokens: {},           // token id -> lock data
+    triggersEnabled: true       // global trigger state
   };
 
   // src/trap-utils.js
@@ -847,13 +852,408 @@ var TrapSystem = (function (exports) {
     }
   }
 
+  // Handle main interaction commands (trigger, explain, fail)
+  function handleInteraction(token, action, playerid, triggeredTokenId = null) {
+    TrapUtils.log(`handleInteraction: ${token.id}, action:${action}, playerid:${playerid}, victim:${triggeredTokenId}`, 'debug');
+    const config = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (!config || config.type !== 'interaction') {
+      TrapUtils.log('Invalid config or not interaction type', 'debug');
+      return;
+    }
+
+    const trappedToken = getObj('graphic', triggeredTokenId);
+    const tagToIdMap = TrapUtils.buildTagToIdMap(token, trappedToken, null);
+
+    switch (action) {
+      case 'trigger':
+        if (config.primaryMacro && config.primaryMacro.macro) {
+          if (trappedToken) {
+            // Mark triggered for later use depletion
+            markTriggered(trappedToken.id, token.id, 'primary');
+          } else {
+            // Manual trigger - just execute macro
+            TrapUtils.executeMacro(config.primaryMacro.macro, tagToIdMap);
+          }
+        } else {
+          TrapUtils.chat('⚠️ No Primary Macro defined. Proceeding to skill check menu.');
+        }
+        
+        // Check if this is a simple fire-and-forget trap
+        if (config.primaryMacro && !config.successMacro && !config.failureMacro) {
+          TrapUtils.log(`Primary-only interaction trap triggered. Resolving immediately.`, 'info');
+          if (trappedToken) {
+            allowMovement(triggeredTokenId, true);
+            TrapUtils.chat(`✅ Trap '${token.get('name')}' triggered and resolved.`);
+          } else {
+            // Manual trigger - deplete use directly
+            const newUses = Math.max(0, config.currentUses - 1);
+            TrapUtils.updateTrapUses(token, newUses, config.maxUses, newUses > 0);
+            if (newUses <= 0) {
+              TrapUtils.chat('💥 Trap depleted.');
+            }
+          }
+          return;
+        }
+        
+        if (trappedToken) {
+          showGMResponseMenu(token, playerid, triggeredTokenId);
+        } else {
+          showCharacterSelectionMenu(token, playerid, triggeredTokenId);
+        }
+        break;
+
+      case 'fail':
+        TrapUtils.log(`Executing failure macro: ${config.failureMacro}`, 'debug');
+        if (config.failureMacro) {
+          TrapUtils.executeMacro(config.failureMacro, tagToIdMap);
+        }
+        break;
+
+      case 'explain':
+        // Smart path - try to auto-detect character
+        if (trappedToken) {
+          const charId = trappedToken.get('represents');
+          if (charId) {
+            const success = prepareSkillCheckState(token, playerid, triggeredTokenId, charId);
+            if (success) {
+              showGMResponseMenu(token, playerid, triggeredTokenId);
+              return;
+            }
+          }
+        }
+        // Fallback to manual character selection
+        showCharacterSelectionMenu(token, playerid, triggeredTokenId);
+        break;
+    }
+  }
+
+  // Prepare skill check state for a character
+  function prepareSkillCheckState(trapToken, gmPlayerId, triggeredTokenId, characterId) {
+    if (!trapToken || !gmPlayerId || !triggeredTokenId || !characterId) {
+      TrapUtils.log('prepareSkillCheckState: missing arguments', 'error');
+      return false;
+    }
+
+    const char = getObj('character', characterId);
+    if (!char) {
+      TrapUtils.log(`Character ${characterId} not found`, 'error');
+      return false;
+    }
+
+    if (!State.pendingChecks[gmPlayerId]) {
+      State.pendingChecks[gmPlayerId] = {};
+    }
+    
+    State.pendingChecks[gmPlayerId].token = trapToken;
+    State.pendingChecks[gmPlayerId].playerid = gmPlayerId;
+    State.pendingChecks[gmPlayerId].characterId = characterId;
+    State.pendingChecks[gmPlayerId].characterName = char.get('name');
+    State.pendingChecks[gmPlayerId].triggeredTokenId = triggeredTokenId;
+    
+    if (State.pendingChecksByChar) {
+      State.pendingChecksByChar[characterId] = { ...State.pendingChecks[gmPlayerId] };
+    }
+
+    TrapUtils.log(`Skill check state prepared for ${char.get('name')}`, 'debug');
+    return true;
+  }
+
+  // Show character selection menu
+  function showCharacterSelectionMenu(token, playerid, triggeredTokenId = null) {
+    const characters = findObjs({ _type: 'character' });
+    const tokenName = token.get('name') || 'Unknown Token';
+    const iconUrl = TrapUtils.getTokenImageURL(token);
+    const tokenIcon = iconUrl === '👤' ? '👤' : `<img src="${iconUrl}" width="20" height="20">`;
+
+    let menu = `&{template:default} {{name=Select Character for Skill Check}}`;
+    menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
+    menu += `{{Characters=`;
+
+    // Filter to player-controlled characters only
+    const filtered = characters.filter(char => {
+      const controlledBy = (char.get('controlledby') || '').split(',');
+      return controlledBy.some(pid => pid && !TrapUtils.playerIsGM(pid));
+    });
+
+    filtered.forEach(char => {
+      const charName = char.get('name');
+      const charId = char.id;
+      menu += `[${charName}](!trapsystem selectcharacter ${token.id} ${charId} ${playerid} ${triggeredTokenId || ''}) `;
+    });
+
+    menu += `}}`;
+    TrapUtils.chat(menu);
+  }
+
+  // Handle skill check setup and display
+  function handleSkillCheck(token, checkIndex, playerid, hideDisplayDCButton = false, hideSetDCButton = false, whisperTo = 'gm', triggeredTokenId = null) {
+    TrapUtils.log(`handleSkillCheck: ${token.id}, checkIndex:${checkIndex}, playerid:${playerid}`, 'debug');
+    const config = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (!config || !config.checks || (checkIndex !== 'custom' && checkIndex >= config.checks.length)) {
+      TrapUtils.log('Invalid config or checkIndex', 'debug');
+      return;
+    }
+
+    const check = (checkIndex === 'custom' && State.pendingChecks[playerid]?.config?.checks[0])
+      ? State.pendingChecks[playerid].config.checks[0]
+      : config.checks[checkIndex];
+
+    if (!check) {
+      TrapUtils.log('Check object not found', 'debug');
+      return;
+    }
+
+    const tokenName = token.get('name') || 'Unknown Token';
+    const iconUrl = TrapUtils.getTokenImageURL(token);
+    const tokenIcon = iconUrl === '👤' ? '👤' : `<img src="${iconUrl}" width="20" height="20">`;
+    const emoji = Config.SKILL_TYPES[check.type] || '🎲';
+    const skillType = check.type.replace(/_/g, ' ');
+
+    const existingCheck = State.pendingChecks[playerid] || {};
+
+    // Get character details from triggered token
+    let charId = existingCheck.characterId || null;
+    let charName = existingCheck.characterName || null;
+    if (triggeredTokenId && !charId) {
+      const victimToken = getObj('graphic', triggeredTokenId);
+      if (victimToken) {
+        const victimCharId = victimToken.get('represents');
+        if (victimCharId) {
+          const victimChar = getObj('character', victimCharId);
+          if (victimChar) {
+            charId = victimChar.id;
+            charName = victimChar.get('name');
+          }
+        }
+      }
+    }
+
+    const pendingCheck = {
+      token: token,
+      checkIndex: checkIndex,
+      config: { ...config, checks: [check] },
+      advantage: null,
+      firstRoll: null,
+      playerid: playerid,
+      characterId: charId,
+      characterName: charName,
+      triggeredTokenId: triggeredTokenId || existingCheck.triggeredTokenId
+    };
+    
+    State.pendingChecks[playerid] = pendingCheck;
+    if (pendingCheck.characterId) {
+      State.pendingChecksByChar[pendingCheck.characterId] = pendingCheck;
+    }
+
+    const triggeredTokenParam = pendingCheck.triggeredTokenId ? ` ${pendingCheck.triggeredTokenId}` : '';
+
+    let menu = `&{template:default} {{name=${emoji} ${skillType} Check (DC ${check.dc})}}`;
+    menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
+    menu += `{{Roll=`;
+    menu += `[Advantage](!trapsystem rollcheck ${token.id} ${checkIndex} advantage ${playerid}${triggeredTokenParam}) | `;
+    menu += `[Normal](!trapsystem rollcheck ${token.id} ${checkIndex} normal ${playerid}${triggeredTokenParam}) | `;
+    menu += `[Disadvantage](!trapsystem rollcheck ${token.id} ${checkIndex} disadvantage ${playerid}${triggeredTokenParam})`;
+
+    if (!hideSetDCButton && checkIndex !== 'custom') {
+      menu += ` | [Set DC](!trapsystem setdc ${token.id} ?{New DC|${check.dc}} ${playerid} ${check.type.replace(/ /g, '_')}${triggeredTokenParam})`;
+    }
+    if (!hideDisplayDCButton && !State.displayDCForCheck[playerid]) {
+      menu += ` | [Display DC](!trapsystem displaydc ${token.id} ${checkIndex} ${playerid})`;
+    }
+    menu += `}}`;
+    
+    if (whisperTo === 'gm') {
+      TrapUtils.chat(menu);
+    } else {
+      sendChat('TrapSystem', menu);
+    }
+  }
+
+  // Handle roll check (advantage/normal/disadvantage)
+  function handleRollCheck(token, checkIndex, advantage, playerid, modifier = 0, triggeredTokenId = null) {
+    TrapUtils.log(`handleRollCheck: ${token.id}, advantage:${advantage}, playerid:${playerid}`, 'debug');
+    const config = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (!config) return;
+
+    const check = checkIndex === 'custom'
+      ? State.pendingChecks[playerid]?.config.checks[0]
+      : config.checks[checkIndex];
+    if (!check) return;
+
+    const tokenName = token.get('name') || 'Unknown Token';
+    const iconUrl = TrapUtils.getTokenImageURL(token);
+    const tokenIcon = iconUrl === '👤' ? '👤' : `<img src="${iconUrl}" width="20" height="20">`;
+    const emoji = Config.SKILL_TYPES[check.type] || '🎲';
+    const skillType = check.type.replace(/_/g, ' ');
+
+    const existingCheck = State.pendingChecks[playerid] || {};
+
+    const pendingCheck = {
+      token: token,
+      checkIndex: checkIndex,
+      config: { ...config, checks: [check] },
+      advantage: advantage,
+      firstRoll: null,
+      playerid: playerid,
+      characterId: existingCheck.characterId,
+      characterName: existingCheck.characterName,
+      triggeredTokenId: triggeredTokenId
+    };
+
+    State.pendingChecks[playerid] = pendingCheck;
+    if (pendingCheck.characterId) {
+      State.pendingChecksByChar[pendingCheck.characterId] = pendingCheck;
+    }
+
+    let rollInstructions = '';
+    let rollNote = '';
+    if (advantage === 'advantage') {
+      rollInstructions = 'Roll with advantage';
+      rollNote = 'Using the higher of two rolls';
+    } else if (advantage === 'disadvantage') {
+      rollInstructions = 'Roll with disadvantage';
+      rollNote = 'Using the lower of two rolls';
+    } else {
+      rollInstructions = 'Roll normally';
+    }
+
+    const showDC = State.displayDCForCheck[playerid] === true;
+    let menu = `&{template:default} {{name=${emoji} Skill Check Required}}`;
+    menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
+    menu += `{{Skill=${skillType}}}`;
+    if (showDC) menu += `{{DC=${check.dc}}}`;
+    menu += `{{Roll Type=${advantage.charAt(0).toUpperCase() + advantage.slice(1)}}}`;
+    if (advantage !== 'normal') {
+      menu += `{{Instructions=${rollInstructions}}}`;
+      menu += `{{Note=${rollNote}}}`;
+    } else {
+      menu += `{{Instructions=Roll 1d20 using your character sheet or /roll 1d20}}`;
+    }
+    sendChat('TrapSystem', menu);
+  }
+
+  // Show GM response menu after action
+  function showGMResponseMenu(token, playerid, triggeredTokenId = null) {
+    const config = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    const tokenName = token.get('name') || 'Unknown Token';
+    const iconUrl = TrapUtils.getTokenImageURL(token);
+    const tokenIcon = iconUrl === '👤' ? '👤' : `<img src="${iconUrl}" width="20" height="20">`;
+    
+    let menu = `&{template:default} {{name=GM Response}}`;
+    menu += `{{Token=${tokenIcon} **${tokenName}**}}`;
+    menu += `{{Action=💭 Explained Action}}`;
+
+    let quickActions = [
+      `[✅ Allow Action](!trapsystem allow ${token.id} ${playerid} ${triggeredTokenId || ''})`
+    ];
+
+    if (config.failureMacro) {
+      quickActions.push(`[❌ Fail Action](!trapsystem fail ${token.id} ${playerid} ${triggeredTokenId || ''})`);
+    }
+
+    if (config.checks && config.checks.length > 0) {
+      config.checks.forEach((check, index) => {
+        const emoji = Config.SKILL_TYPES[check.type] || '🎲';
+        quickActions.push(`[${emoji} ${check.type}](!trapsystem check ${token.id} ${index} ${playerid} ${triggeredTokenId || ''})`);
+      });
+    }
+
+    menu += `{{Quick Actions=${quickActions.join(' | ')}}}`;
+    TrapUtils.chat(menu);
+  }
+
+  // Handle allow action (success)
+  function handleAllowAction(token, playerid, triggeredTokenId = null) {
+    const config = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (config && config.successMacro) {
+      const trappedToken = getObj('graphic', triggeredTokenId);
+      const tagToIdMap = TrapUtils.buildTagToIdMap(token, trappedToken);
+      TrapUtils.executeMacro(config.successMacro, tagToIdMap);
+      
+      const macroString = config.successMacro.trim();
+      if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
+        TrapUtils.whisper(playerid, `✅ Success macro executed.`);
+      }
+    } else {
+      TrapUtils.whisper(playerid, '⚠️ No success macro defined.');
+    }
+
+    // Resolve trap state
+    if (triggeredTokenId && State.lockedTokens[triggeredTokenId]) {
+      State.lockedTokens[triggeredTokenId].macroTriggered = true;
+      allowMovement(triggeredTokenId);
+    } else {
+      // Manual interaction - deplete use
+      const trapData = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+      if (trapData && trapData.currentUses > 0) {
+        const newUses = trapData.currentUses - 1;
+        TrapUtils.updateTrapUses(token, newUses, trapData.maxUses, newUses > 0);
+        if (newUses <= 0) {
+          TrapUtils.chat('💥 Trap depleted.');
+        }
+      }
+    }
+  }
+
+  // Handle fail action
+  function handleFailAction(token, playerid, triggeredTokenId = null) {
+    const config = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+    if (config && config.failureMacro) {
+      const trappedToken = getObj('graphic', triggeredTokenId);
+      const tagToIdMap = TrapUtils.buildTagToIdMap(token, trappedToken);
+      TrapUtils.executeMacro(config.failureMacro, tagToIdMap);
+      
+      const macroString = config.failureMacro.trim();
+      if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
+        TrapUtils.whisper(playerid, `❌ Failure macro executed.`);
+      }
+    } else {
+      TrapUtils.whisper(playerid, '⚠️ No failure macro defined.');
+    }
+
+    // Resolve trap state
+    if (triggeredTokenId && State.lockedTokens[triggeredTokenId]) {
+      State.lockedTokens[triggeredTokenId].macroTriggered = true;
+      allowMovement(triggeredTokenId);
+    } else {
+      // Manual interaction - deplete use
+      const trapData = TrapUtils.parseTrapNotes(token.get('gmnotes'), token);
+      if (trapData && trapData.currentUses > 0) {
+        const newUses = trapData.currentUses - 1;
+        TrapUtils.updateTrapUses(token, newUses, trapData.maxUses, newUses > 0);
+        if (newUses <= 0) {
+          TrapUtils.chat('💥 Trap depleted.');
+        }
+      }
+    }
+  }
+
+  // Stub functions for movement/lock management (will be migrated later)
+  function markTriggered(tokenId, trapId, macroIdentifier) {
+    TrapUtils.log(`markTriggered: ${tokenId}, ${trapId}, ${macroIdentifier}`, 'debug');
+    // This will be fully implemented when we migrate the movement system
+  }
+
+  function allowMovement(tokenId, suppressMessage = false) {
+    TrapUtils.log(`allowMovement: ${tokenId}`, 'debug');
+    // This will be fully implemented when we migrate the movement system
+  }
+
   const interaction = {
     performSkillCheck,
     handleDetectionAttempt,
     handleDisarmAttempt,
     getNearbyCharacters,
     showInteractionMenu,
-    processInteractionCommand
+    processInteractionCommand,
+    handleInteraction,
+    prepareSkillCheckState,
+    showCharacterSelectionMenu,
+    handleSkillCheck,
+    handleRollCheck,
+    showGMResponseMenu,
+    handleAllowAction,
+    handleFailAction
   };
 
   // src/trap-macros.js
