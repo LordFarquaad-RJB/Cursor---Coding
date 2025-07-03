@@ -2,6 +2,7 @@
 // For now we export an empty scaffold TrapSystem with utilities.
 
 import * as TrapUtils from './trap-utils.js';
+import { detector } from './trap-detector.js';
 
 // Placeholder imports – these modules will gradually be filled out.
 import './trap-core.js';
@@ -15,7 +16,7 @@ const TrapSystem = {
   utils: TrapUtils,
   // Namespaces to be wired up in later phases
   core: {},
-  detection: {},
+  detection: detector,
   interaction: {},
   macros: {},
   ui: {}
