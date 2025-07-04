@@ -1648,8 +1648,8 @@ const TrapSystem = {
                 if (typeof value !== 'string') return value;
                 // Only wrap if it contains special characters and is not already a safe command/macro
                 if (value.includes('[') || value.includes(']')) {
-                    // Escape any pre-existing double quotes before wrapping
-                    const escapedValue = value.replace(/"/g, '\\"');
+                    // Escape any pre-existing backslashes and double quotes before wrapping
+                    const escapedValue = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
                     return `"${escapedValue}"`;
                 }
                 return value;
@@ -2630,7 +2630,7 @@ const TrapSystem = {
                 }
 
                 if (content.startsWith('&{')) { // This is a roll template
-                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                    return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Escape backslashes and double quotes, then quote
                 }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
@@ -2648,7 +2648,9 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+
+                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape backslashes and double quotes
+
             };
 
             const primaryMacroProcessed = processMacro(mainMacro);
@@ -2772,7 +2774,7 @@ const TrapSystem = {
                 }
 
                 if (content.startsWith('&{')) { // This is a roll template
-                    return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                    return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape backslashes and double quotes
                 }
                 if (content.startsWith('!')) {
                     return `"$${content.substring(1)}"`;
@@ -2792,7 +2794,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
+                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape
             };
 
             let parts = [
@@ -4502,7 +4504,14 @@ const TrapSystem = {
             const sanitizeForMenuPreview = (str, maxLength = 35) => {
                 if (!str) return "(Not Set)";
                 let preview = str.replace(/&{template:[^}]+}/g, "").replace(/{{[^}]+}}/g, " [...] ");
-                preview = preview.replace(/<[^>]+>/g, ""); 
+                
+                // Iteratively remove HTML tags to prevent injection from crafted inputs like <s<script>cript>
+                let prev;
+                do {
+                    prev = preview;
+                    preview = preview.replace(/<[^>]+>/g, "");
+                } while (preview !== prev);
+
                 preview = preview.replace(/\[([^\]]*)\]\(([^)]*)\)/g, "$1"); 
                 preview = preview.trim();
                 if (preview.length > maxLength) preview = preview.substring(0, maxLength - 3) + "...";

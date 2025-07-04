@@ -15,11 +15,10 @@
  * [TAG: DB_15_Normalize_Price_Data_in_an_Item] - Not Required (duplicate of DB_9)
  * [TAG: DB_16_Normalize_All_Prices_in_the_Database] - Not Required (duplicate of DB_10)
  * [TAG: DB_27_Normalize_All_Prices_in_the_Database] - Not Required (duplicate functionality)
- */
-
-/* Configuration and Constants
+ *
+ * Configuration and Constants
  * [TAG: MG_DB_2_SHOP_2_Configuration_and_Constants]
- */
+ **/
 const CONFIG = {
         version: '1.0.0',
         debug: false,
@@ -613,7 +612,13 @@ const ShopSystem = {
             return new Promise((resolve, reject) => {
                 handout.get("notes", function(notes) {
                     try {
-                        let cleanedNotes = notes.replace(/<[^>]*>/g, '');
+                        let cleanedNotes = notes;
+                        let lastCleaned;
+                        do {
+                            lastCleaned = cleanedNotes;
+                            cleanedNotes = cleanedNotes.replace(/<[^>]*>/g, '');
+                        } while (cleanedNotes !== lastCleaned);
+                        
                         cleanedNotes = cleanedNotes.replace(/&quot;/g, '"');
                         cleanedNotes = cleanedNotes.replace(/&amp;/g, '&');
                         cleanedNotes = cleanedNotes.replace(/&lt;/g, '<');
@@ -633,7 +638,13 @@ const ShopSystem = {
         cleanHandoutNotes(notes) {
             if (!notes) return "";
             
-            let cleanedNotes = notes.replace(/<[^>]*>/g, '');
+            let cleanedNotes = notes;
+            let lastCleaned;
+            do {
+                lastCleaned = cleanedNotes;
+                cleanedNotes = cleanedNotes.replace(/<[^>]*>/g, '');
+            } while (cleanedNotes !== lastCleaned);
+
             cleanedNotes = cleanedNotes.replace(/&quot;/g, '"');
             cleanedNotes = cleanedNotes.replace(/&amp;/g, '&');
             cleanedNotes = cleanedNotes.replace(/&lt;/g, '<');
