@@ -30,89 +30,127 @@ const CONFIG = {
     requiredModules: [
         'ShopConfig.js',
         'CurrencyManager.js',
-        'MenuBuilder.js'
+        'MenuBuilder.js',
+        'BasketManager.js',
+        'ReceiptGenerator.js',
+        'StockManager.js'
+    ],
+    
+    optionalModules: [
+        'DatabaseManager.js'
     ]
 };
 
 // Parse command line arguments
 const args = process.argv.slice(2);
 const isDev = args.includes('--dev');
+const watchMode = args.includes('--watch');
 const outputIndex = args.indexOf('--output');
-const outputFile = outputIndex !== -1 && args[outputIndex + 1] ? args[outputIndex + 1] : CONFIG.outputFile;
-
-console.log('🔧 Building Live-SYS-ShopSystem for Roll20...');
-console.log(`📂 Source: ${CONFIG.sourceDir}`);
-console.log(`📄 Output: ${outputFile}`);
-console.log(`🔧 Mode: ${isDev ? 'Development' : 'Production'}`);
+const customOutput = outputIndex !== -1 ? args[outputIndex + 1] : null;
 
 /**
- * Read and clean a module file
+ * Main build function
  */
-function readModule(modulePath) {
-    if (!fs.existsSync(modulePath)) {
-        console.log(`⚠️  Module not found: ${modulePath}`);
-        return null;
+function build() {
+    console.log('� Building ShopSystem...');
+    console.log(`Mode: ${isDev ? 'Development' : 'Production'}`);
+    
+    try {
+        const modules = loadModules();
+        const builtScript = combineModules(modules);
+        const outputPath = customOutput || CONFIG.outputFile;
+        
+        writeOutput(builtScript, outputPath);
+        
+        console.log(`✅ Build complete: ${outputPath}`);
+        console.log(`📊 Stats: ${modules.length} modules, ${builtScript.split('\n').length} lines`);
+        
+    } catch (error) {
+        console.error(`❌ Build failed: ${error.message}`);
+        process.exit(1);
     }
-    
-    let content = fs.readFileSync(modulePath, 'utf8');
-    
-    // Remove export statements (Roll20 doesn't support them)
-    content = content.replace(/if \(typeof module !== 'undefined'[\s\S]*?}\s*else\s*{\s*this\..*?;\s*}/g, '');
-    
-    // Remove module.exports lines
-    content = content.replace(/module\.exports = .*?;/g, '');
-    
-    return content;
 }
 
 /**
- * Generate module initialization code
+ * Load all modules in correct order
  */
-function generateInitCode(availableModules) {
-    return `
-// ============================================================================
-// MODULE INITIALIZATION
-// ============================================================================
-
-// Initialize ShopSystemModules object
-if (typeof ShopSystemModules === 'undefined') {
-    var ShopSystemModules = {};
-}
-
-// Initialize modules in dependency order
-${availableModules.includes('ShopConfig.js') ? 'ShopSystemModules.config = ShopConfig;' : ''}
-${availableModules.includes('CurrencyManager.js') ? 'ShopSystemModules.currency = CurrencyManager.init(ShopConfig);' : ''}
-${availableModules.includes('MenuBuilder.js') ? 'ShopSystemModules.menu = MenuBuilder.init(ShopConfig);' : ''}
-${availableModules.includes('BasketManager.js') ? 'ShopSystemModules.basket = BasketManager.init(ShopConfig);' : ''}
-${availableModules.includes('ReceiptGenerator.js') ? 'ShopSystemModules.receipt = ReceiptGenerator.init(ShopConfig);' : ''}
-${availableModules.includes('StockManager.js') ? 'ShopSystemModules.stock = StockManager.init(ShopConfig);' : ''}
-${availableModules.includes('DatabaseManager.js') ? 'ShopSystemModules.database = DatabaseManager.init(ShopConfig);' : ''}
-
-// Log module status
-log('📦 ShopSystem Modules Loaded:');
-${availableModules.map(mod => `log('  ✅ ${mod.replace('.js', '')}');`).join('\n')}
-
-// Helper function to check if modules are available
-function checkModules() {
-    const required = ${JSON.stringify(CONFIG.requiredModules.map(m => m.replace('.js', '')))};
-    const missing = required.filter(name => !ShopSystemModules[name.toLowerCase()]);
+function loadModules() {
+    const modules = [];
+    const loadedModules = new Set();
     
-    if (missing.length > 0) {
-        log('❌ Missing required modules: ' + missing.join(', '));
-        return false;
+    console.log('📦 Loading modules...');
+    
+    // Load modules in specified order
+    for (const moduleFile of CONFIG.moduleOrder) {
+        const modulePath = path.join(CONFIG.sourceDir, moduleFile);
+        
+        if (fs.existsSync(modulePath)) {
+            console.log(`  ✅ ${moduleFile}`);
+            const content = fs.readFileSync(modulePath, 'utf-8');
+            modules.push({
+                name: moduleFile,
+                content: content,
+                required: CONFIG.requiredModules.includes(moduleFile)
+            });
+            loadedModules.add(moduleFile);
+        } else {
+            if (CONFIG.requiredModules.includes(moduleFile)) {
+                throw new Error(`Required module not found: ${moduleFile}`);
+            } else {
+                console.log(`  ⚠️  ${moduleFile} (optional, not found)`);
+            }
+        }
     }
     
-    log('✅ All required modules loaded successfully');
-    return true;
+    // Load index.js last
+    const indexPath = path.join(CONFIG.sourceDir, 'index.js');
+    if (fs.existsSync(indexPath)) {
+        console.log(`  ✅ index.js`);
+        const content = fs.readFileSync(indexPath, 'utf-8');
+        modules.push({
+            name: 'index.js',
+            content: content,
+            required: true
+        });
+    } else {
+        throw new Error('index.js not found');
+    }
+    
+    return modules;
 }
 
-// Validate module loading
-checkModules();
-
-// ============================================================================
-// MAIN SHOPSYSTEM CODE BEGINS HERE
-// ============================================================================
-`;
+/**
+ * Combine modules into single script
+ */
+function combineModules(modules) {
+    const parts = [];
+    
+    // Add build header
+    parts.push(generateBuildHeader());
+    
+    // Add each module
+    modules.forEach((module, index) => {
+        parts.push(generateModuleHeader(module.name, index + 1, modules.length));
+        
+        // Clean module content (remove exports for Roll20)
+        let moduleContent = cleanModuleContent(module.content);
+        
+        parts.push(moduleContent);
+        parts.push(generateModuleFooter(module.name));
+    });
+    
+    // Add original file if in dev mode
+    if (isDev) {
+        parts.push(generateOriginalFileSection());
+    }
+    
+    // Add module initialization
+    parts.push(generateModuleInitialization());
+    
+    // Add build footer
+    parts.push(generateBuildFooter());
+    
+    return parts.join('\n\n');
 }
 
 /**
@@ -120,173 +158,186 @@ checkModules();
  */
 function generateBuildHeader() {
     const timestamp = new Date().toISOString();
-    const version = require('./package.json').version || '1.0.0';
+    const mode = isDev ? 'Development' : 'Production';
     
     return `/**
  * Live-SYS-ShopSystem - Built Version
  * 
  * Generated: ${timestamp}
- * Version: ${version}
- * Build Mode: ${isDev ? 'Development' : 'Production'}
+ * Mode: ${mode}
+ * Build System: v2.0
  * 
- * This file is auto-generated from multiple modules.
- * Do not edit directly - edit the source modules instead.
+ * This file contains all ShopSystem modules combined for Roll20 deployment.
+ * Original files are located in the modules/ directory.
  * 
- * Source modules included:
-${CONFIG.moduleOrder.map(mod => ` * - ${mod}`).join('\n')}
+ * DO NOT EDIT THIS FILE DIRECTLY
+ * Make changes to the individual module files and rebuild.
  */
 
-// ============================================================================
-// MODULES
-// ============================================================================
-`;
+// ===================================================================
+// SHOPSYSTEM MODULES - START
+// ===================================================================`;
 }
 
 /**
- * Process the original main file  
+ * Generate module header
  */
-function processMainFile() {
-    const mainPath = path.join(CONFIG.outputDir, CONFIG.originalFile);
+function generateModuleHeader(moduleName, index, total) {
+    return `
+// ===================================================================
+// MODULE ${index}/${total}: ${moduleName}
+// ===================================================================`;
+}
+
+/**
+ * Generate module footer
+ */
+function generateModuleFooter(moduleName) {
+    return `// END MODULE: ${moduleName}`;
+}
+
+/**
+ * Clean module content for Roll20
+ */
+function cleanModuleContent(content) {
+    // Remove export statements for Roll20 compatibility
+    let cleaned = content.replace(/^if \(typeof module.*$/gm, '// Removed: Module export');
+    cleaned = cleaned.replace(/^} else if \(typeof exports.*$/gm, '// Removed: Exports');
+    cleaned = cleaned.replace(/^} else \{$/gm, '// Roll20 environment:');
+    cleaned = cleaned.replace(/module\.exports = .*;$/gm, '// Removed: Module export');
+    cleaned = cleaned.replace(/exports\..* = .*;$/gm, '// Removed: Export assignment');
     
-    if (!fs.existsSync(mainPath)) {
-        console.log(`⚠️  Original file not found: ${mainPath}`);
-        return '// Original ShopSystem file not found';
+    // Keep this.ModuleName assignments for Roll20
+    return cleaned;
+}
+
+/**
+ * Generate original file section (dev mode)
+ */
+function generateOriginalFileSection() {
+    if (!fs.existsSync(CONFIG.originalFile)) {
+        return '// Original file not found for development build';
     }
     
-    let content = fs.readFileSync(mainPath, 'utf8');
+    const originalContent = fs.readFileSync(CONFIG.originalFile, 'utf-8');
     
-    // Remove the CONFIG object if it exists (will be replaced by ShopConfig module)
-    content = content.replace(/const CONFIG = \{[\s\S]*?\};/g, '// CONFIG object replaced by ShopConfig module');
-    
-    // TODO: Add more automatic replacements here as we identify them
-    
-    return content;
+    return `
+// ===================================================================
+// ORIGINAL FILE (Development Mode)
+// ===================================================================
+// 
+// The original Live-SYS-ShopSystem.js file is included below for reference
+// and backward compatibility during development.
+// In production builds, only the modular components above are included.
+//
+
+${originalContent}
+
+// ===================================================================
+// END ORIGINAL FILE
+// ===================================================================`;
 }
 
 /**
- * Main build function
+ * Generate module initialization code
  */
-function buildScript() {
-    const parts = [];
-    const availableModules = [];
-    
-    // Add build header
-    parts.push(generateBuildHeader());
-    
-    // Process each module in order
-    CONFIG.moduleOrder.forEach(moduleName => {
-        const modulePath = path.join(CONFIG.sourceDir, moduleName);
-        const moduleContent = readModule(modulePath);
+function generateModuleInitialization() {
+    return `
+// ===================================================================
+// MODULE INITIALIZATION
+// ===================================================================
+
+// Initialize all ShopSystem modules
+if (typeof ShopSystemModules !== 'undefined') {
+    // Auto-initialize modules when Roll20 is ready
+    on('ready', function() {
+        const initResults = ShopSystemModules.init();
         
-        if (moduleContent) {
-            availableModules.push(moduleName);
-            parts.push(`\n// ============================================================================`);
-            parts.push(`// MODULE: ${moduleName}`);
-            parts.push(`// ============================================================================\n`);
-            parts.push(moduleContent);
+        if (initResults.success) {
+            log('🎉 ShopSystem modular build loaded successfully!');
+            log(\`✅ Modules initialized: \${initResults.initialized.length}\`);
+        } else {
+            log('⚠️ ShopSystem loaded with module errors');
+            log(\`❌ Failed modules: \${initResults.failed.join(', ')}\`);
         }
+        
+        // Log build information
+        log('📦 ShopSystem Build Info:');
+        log('   Version: Built with modular system v2.0');
+        log(\`   Modules: \${initResults.initialized.join(', ')}\`);
+        log('   Mode: ${isDev ? 'Development' : 'Production'}');
+    });
+} else {
+    log('❌ ShopSystemModules not found - check module loading');
+}`;
+}
+
+/**
+ * Generate build footer
+ */
+function generateBuildFooter() {
+    return `
+// ===================================================================
+// SHOPSYSTEM MODULES - END
+// ===================================================================
+
+// Build complete - ready for Roll20 deployment`;
+}
+
+/**
+ * Write output file
+ */
+function writeOutput(content, outputPath) {
+    const fullPath = path.join(CONFIG.outputDir, outputPath);
+    fs.writeFileSync(fullPath, content, 'utf-8');
+    
+    // Log file size
+    const stats = fs.statSync(fullPath);
+    const sizeKB = (stats.size / 1024).toFixed(2);
+    console.log(`📄 Output file: ${sizeKB} KB`);
+}
+
+/**
+ * Watch mode
+ */
+function setupWatchMode() {
+    console.log('👀 Watch mode enabled - watching for changes...');
+    
+    const chokidar = require('chokidar');
+    const watcher = chokidar.watch([
+        CONFIG.sourceDir + '/**/*.js',
+        CONFIG.originalFile
+    ]);
+    
+    let buildTimeout;
+    
+    watcher.on('change', (path) => {
+        console.log(`📝 File changed: ${path}`);
+        
+        // Debounce builds
+        clearTimeout(buildTimeout);
+        buildTimeout = setTimeout(() => {
+            console.log('🔄 Rebuilding...');
+            build();
+        }, 500);
     });
     
-    // Add module initialization
-    parts.push(generateInitCode(availableModules));
+    watcher.on('error', error => {
+        console.error(`Watch error: ${error}`);
+    });
     
-    // Add original main file (if we want to include it)
-    if (isDev) {
-        parts.push('\n// ============================================================================');
-        parts.push('// ORIGINAL MAIN FILE (for reference in dev mode)');
-        parts.push('// ============================================================================\n');
-        parts.push('/*\n' + processMainFile() + '\n*/');
-    }
-    
-    return parts.join('\n');
+    // Initial build
+    build();
 }
 
-/**
- * Write the built file
- */
-function writeBuiltFile(content) {
-    const outputPath = path.join(CONFIG.outputDir, outputFile);
-    
+// Main execution
+if (watchMode) {
     try {
-        fs.writeFileSync(outputPath, content);
-        console.log(`✅ Built file created: ${outputPath}`);
-        console.log(`📊 File size: ${(fs.statSync(outputPath).size / 1024).toFixed(2)} KB`);
-        
-        // Count lines
-        const lines = content.split('\n').length;
-        console.log(`📏 Lines: ${lines}`);
-        
-        return true;
+        setupWatchMode();
     } catch (error) {
-        console.error(`❌ Error writing file: ${error.message}`);
-        return false;
+        console.log('⚠️ Watch mode requires chokidar package. Running single build instead.');
+        build();
     }
+} else {
+    build();
 }
-
-/**
- * Create a simple package.json if it doesn't exist
- */
-function ensurePackageJson() {
-    const packagePath = path.join(CONFIG.outputDir, 'package.json');
-    
-    if (!fs.existsSync(packagePath)) {
-        const defaultPackage = {
-            name: "live-sys-shopsystem",
-            version: "1.0.0",
-            description: "Roll20 Shop System - Modular Build",
-            main: "Live-SYS-ShopSystem.js",
-            scripts: {
-                build: "node build.js",
-                "build:dev": "node build.js --dev"
-            },
-            keywords: ["roll20", "dnd", "shop", "system"],
-            author: "Your Name",
-            license: "MIT"
-        };
-        
-        fs.writeFileSync(packagePath, JSON.stringify(defaultPackage, null, 2));
-        console.log('📦 Created package.json');
-    }
-}
-
-// ============================================================================
-// MAIN EXECUTION
-// ============================================================================
-
-function main() {
-    console.log('🚀 Starting build process...\n');
-    
-    // Ensure package.json exists
-    ensurePackageJson();
-    
-    // Check if source directory exists
-    if (!fs.existsSync(CONFIG.sourceDir)) {
-        console.error(`❌ Source directory not found: ${CONFIG.sourceDir}`);
-        process.exit(1);
-    }
-    
-    // Build the script
-    const builtContent = buildScript();
-    
-    // Write the output file
-    const success = writeBuiltFile(builtContent);
-    
-    if (success) {
-        console.log('\n🎉 Build completed successfully!');
-        console.log(`\n📋 Next steps:`);
-        console.log(`   1. Open Roll20 and go to the API Scripts tab`);
-        console.log(`   2. Create a new script or edit existing script`);
-        console.log(`   3. Copy the contents of ${outputFile} into the script`);
-        console.log(`   4. Save and test the script`);
-        
-        if (isDev) {
-            console.log(`\n🔧 Development mode: Original file included as comments for reference`);
-        }
-    } else {
-        console.log('\n❌ Build failed');
-        process.exit(1);
-    }
-}
-
-// Run the build
-main();
