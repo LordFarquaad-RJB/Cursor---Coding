@@ -2,7 +2,7 @@
 // Passive detection system for automatic trap discovery via perception checks
 
 import TrapUtils from './trap-utils.js';
-import { Config } from './trap-core.js';
+import { Config, State } from './trap-core.js';
 
 export const PassiveDetection = {
     /**
@@ -18,15 +18,15 @@ export const PassiveDetection = {
         const observerId = charId || triggeringToken.id;
 
         // Ensure passivelyNoticedTraps is initialized
-        if (typeof Config.state.passivelyNoticedTraps !== 'object' || Config.state.passivelyNoticedTraps === null) {
-            Config.state.passivelyNoticedTraps = {};
+        if (typeof State.passivelyNoticedTraps !== 'object' || State.passivelyNoticedTraps === null) {
+            State.passivelyNoticedTraps = {};
         }
 
         // Update state that this character has noticed this trap
-        if (!Config.state.passivelyNoticedTraps[noticedTrap.id]) {
-            Config.state.passivelyNoticedTraps[noticedTrap.id] = {};
+        if (!State.passivelyNoticedTraps[noticedTrap.id]) {
+            State.passivelyNoticedTraps[noticedTrap.id] = {};
         }
-        Config.state.passivelyNoticedTraps[noticedTrap.id][observerId] = true;
+        State.passivelyNoticedTraps[noticedTrap.id][observerId] = true;
 
         // Persistently mark the trap as detected in its notes
         let notes = noticedTrap.get("gmnotes");
@@ -123,16 +123,16 @@ export const PassiveDetection = {
         const currentTime = Date.now();
         const debounceTime = Config.messages.passiveNoticeDebounceTime || 100000; // Default 100s
 
-        if (!Config.state.recentlyNoticedPlayerMessages[charId]) {
-            Config.state.recentlyNoticedPlayerMessages[charId] = [];
+        if (!State.recentlyNoticedPlayerMessages[charId]) {
+            State.recentlyNoticedPlayerMessages[charId] = [];
         }
 
         // Filter out old messages
-        Config.state.recentlyNoticedPlayerMessages[charId] = Config.state.recentlyNoticedPlayerMessages[charId].filter(
+        State.recentlyNoticedPlayerMessages[charId] = State.recentlyNoticedPlayerMessages[charId].filter(
             entry => (currentTime - entry.timestamp) < debounceTime
         );
 
-        const alreadySentRecently = Config.state.recentlyNoticedPlayerMessages[charId].some(
+        const alreadySentRecently = State.recentlyNoticedPlayerMessages[charId].some(
             entry => entry.messageContent === finalPlayerMsg
         );
 
@@ -148,7 +148,7 @@ export const PassiveDetection = {
                 }
             });
             // Record this message as sent
-            Config.state.recentlyNoticedPlayerMessages[charId].push({ 
+            State.recentlyNoticedPlayerMessages[charId].push({ 
                 messageContent: finalPlayerMsg, 
                 timestamp: currentTime 
             });
@@ -284,7 +284,7 @@ export const PassiveDetection = {
         if (!trapToken || !TrapUtils.isTrap(trapToken)) return;
 
         // Check for global hide
-        if (Config.state.detectionAurasTemporarilyHidden) {
+        if (State.detectionAurasTemporarilyHidden) {
             trapToken.set({ aura2_radius: '' });
             return;
         }
@@ -359,8 +359,8 @@ export const PassiveDetection = {
         const observerId = observerToken.get('represents') || observerToken.id;
 
         // Check if observer has already noticed this trap
-        const alreadyNoticed = Config.state.passivelyNoticedTraps[trapToken.id] && 
-                              Config.state.passivelyNoticedTraps[trapToken.id][observerId];
+        const alreadyNoticed = State.passivelyNoticedTraps[trapToken.id] && 
+                              State.passivelyNoticedTraps[trapToken.id][observerId];
         if (alreadyNoticed) {
             if (Config.DEBUG) {
                 TrapUtils.log(`Passive Notice SKIPPED for trap ${trapToken.id}: Observer ${observerId} has already noticed it.`, 'debug');
@@ -473,7 +473,7 @@ export const PassiveDetection = {
             const trapId = selectedToken.id;
             const trapName = selectedToken.get("name") || `Trap ID ${trapId}`;
             
-            if (Config.state.passivelyNoticedTraps && Config.state.passivelyNoticedTraps[trapId]) {
+            if (State.passivelyNoticedTraps && State.passivelyNoticedTraps[trapId]) {
                 // Remove the persistent 'detected' flag from notes
                 let notes = selectedToken.get("gmnotes");
                 let decodedNotes = "";
@@ -489,7 +489,7 @@ export const PassiveDetection = {
                     TrapUtils.parseTrapNotes(updatedNotes, selectedToken);
                 }
                 
-                delete Config.state.passivelyNoticedTraps[trapId];
+                delete State.passivelyNoticedTraps[trapId];
                 TrapUtils.log(`Passively noticed state for trap ID '${trapId}' has been cleared.`, 'info');
                 message = `✅ Passive detection state for selected trap '${trapName}' has been reset.`;
             } else {
@@ -498,7 +498,7 @@ export const PassiveDetection = {
             }
         } else {
             // Clear the entire passively noticed traps state
-            if (Object.keys(Config.state.passivelyNoticedTraps).length > 0) {
+            if (Object.keys(State.passivelyNoticedTraps).length > 0) {
                 // Find all traps and reset their auras if they were previously detected
                 const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapUtils.isTrap(t));
                 allTraps.forEach(trapToken => {
@@ -518,7 +518,7 @@ export const PassiveDetection = {
                     }
                 });
                 
-                Config.state.passivelyNoticedTraps = {};
+                State.passivelyNoticedTraps = {};
                 TrapUtils.log('All passivelyNoticedTraps have been cleared.', 'info');
                 message = '✅ All passive detection states have been reset. Characters will need to re-detect all traps.';
             } else {
@@ -541,12 +541,12 @@ export const PassiveDetection = {
      * @param {string} playerId - Player ID for messaging
      */
     hideAllAuras(durationMinutes, playerId) {
-        if (Config.state.hideAurasTimeout) {
-            clearTimeout(Config.state.hideAurasTimeout);
-            Config.state.hideAurasTimeout = null;
+        if (State.hideAurasTimeout) {
+            clearTimeout(State.hideAurasTimeout);
+            State.hideAurasTimeout = null;
         }
 
-        Config.state.detectionAurasTemporarilyHidden = true;
+        State.detectionAurasTemporarilyHidden = true;
 
         const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapUtils.isTrap(t));
         allTraps.forEach(trapToken => {
@@ -557,7 +557,7 @@ export const PassiveDetection = {
         
         const durationMs = parseFloat(durationMinutes) * 60 * 1000;
         if (!isNaN(durationMs) && durationMs > 0) {
-            Config.state.hideAurasTimeout = setTimeout(() => {
+            State.hideAurasTimeout = setTimeout(() => {
                 this.showAllAuras(playerId, true);
             }, durationMs);
             message += ` They will automatically reappear in ${durationMinutes} minute(s).`;
@@ -572,12 +572,12 @@ export const PassiveDetection = {
      * @param {boolean} isAuto - Whether this was called automatically
      */
     showAllAuras(playerId, isAuto = false) {
-        if (Config.state.hideAurasTimeout) {
-            clearTimeout(Config.state.hideAurasTimeout);
-            Config.state.hideAurasTimeout = null;
+        if (State.hideAurasTimeout) {
+            clearTimeout(State.hideAurasTimeout);
+            State.hideAurasTimeout = null;
         }
 
-        Config.state.detectionAurasTemporarilyHidden = false;
+        State.detectionAurasTemporarilyHidden = false;
 
         const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapUtils.isTrap(t));
         allTraps.forEach(trapToken => {

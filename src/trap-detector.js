@@ -2,7 +2,7 @@
 // Migration of movement-based detection helpers.
 
 import TrapUtils from './trap-utils.js';
-import { Config } from './trap-core.js';
+import { Config, State } from './trap-core.js';
 import { triggers } from './trap-triggers.js';
 
 // Simple wrapper around legacy overlap check
@@ -46,7 +46,7 @@ export const MovementDetector = {
     async checkTrapTrigger(movedToken, prevX, prevY) {
         if (!movedToken) return;
         
-        if (!Config.state.triggersEnabled) {
+        if (!State.triggersEnabled) {
             TrapUtils.log('Triggers disabled', 'debug');
             return;
         }
@@ -70,8 +70,8 @@ export const MovementDetector = {
         }
 
         // If safe move token, skip
-        if (Config.state.safeMoveTokens.has(movedToken.id)) {
-            Config.state.safeMoveTokens.delete(movedToken.id);
+        if (State.safeMoveTokens.has(movedToken.id)) {
+            State.safeMoveTokens.delete(movedToken.id);
             return;
         }
 
@@ -299,7 +299,7 @@ export const MovementDetector = {
         let finalPos;
 
         const getOccupiedPixelPositions = () => {
-            return Object.entries(Config.state.lockedTokens)
+            return Object.entries(State.lockedTokens)
                 .filter(([id, v]) => v.trapToken === trapToken.id && id !== movedToken.id)
                 .map(([id, _]) => {
                     const t = getObj("graphic", id);

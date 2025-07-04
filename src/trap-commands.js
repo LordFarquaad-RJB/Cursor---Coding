@@ -70,7 +70,7 @@ export const Commands = {
         }
 
         const action = args[1];
-        const selectedToken = msg.selected ? getObj("graphic", msg.selected[0]._id) : null;
+        const selectedToken = msg.selected && msg.selected.length > 0 ? getObj("graphic", msg.selected[0]._id) : null;
 
         // Commands that don't require a selected token
         const noTokenCommands = [
@@ -384,7 +384,7 @@ export const Commands = {
     handleAllowMovement(args, msg) {
         const movementTokenId = args[2] && args[2].trim();
         if (movementTokenId === 'selected') {
-            if (!msg.selected || !msg.selected[0]) {
+            if (!msg.selected || msg.selected.length === 0) {
                 TrapUtils.chat("❌ Error: No token selected!");
                 return;
             }
@@ -596,7 +596,7 @@ export const Commands = {
         const rollType = args[6] || 'normal';
         const isAdvantageRoll = args[7] === '1';
         
-        let pendingCheck = Config.state.pendingChecksByChar[entityId] || Config.state.pendingChecks[entityId];
+        let pendingCheck = State.pendingChecksByChar[entityId] || State.pendingChecks[entityId];
         const trapToken = getObj("graphic", trapTokenId);
         
         if (!pendingCheck || !trapToken) {
@@ -699,17 +699,17 @@ export const Commands = {
             return;
         }
         
-        if (!Config.state.pendingChecks[playerid]) {
-            Config.state.pendingChecks[playerid] = {};
+        if (!State.pendingChecks[playerid]) {
+            State.pendingChecks[playerid] = {};
         }
         
-        Config.state.pendingChecks[playerid].characterId = character.id;
-        Config.state.pendingChecks[playerid].characterName = character.get("name");
-        Config.state.pendingChecks[playerid].triggeredTokenId = triggeredTokenId;
+        State.pendingChecks[playerid].characterId = character.id;
+        State.pendingChecks[playerid].characterName = character.get("name");
+        State.pendingChecks[playerid].triggeredTokenId = triggeredTokenId;
         
-        if (Config.state.pendingChecksByChar && character.id) {
-            Config.state.pendingChecksByChar[character.id] = {
-                ...Config.state.pendingChecks[playerid],
+        if (State.pendingChecksByChar && character.id) {
+            State.pendingChecksByChar[character.id] = {
+                ...State.pendingChecks[playerid],
                 token: trapToken
             };
         }

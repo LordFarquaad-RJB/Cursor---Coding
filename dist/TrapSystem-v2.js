@@ -84,6 +84,12 @@ var TrapSystem = (function (exports) {
     pendingChecksByChar: {},     // character id -> pending check data  
     displayDCForCheck: {},       // playerid -> boolean (show DC in menus)
     lockedTokens: {},           // token id -> lock data
+    triggersEnabled: true,       // global trigger state
+    safeMoveTokens: new Set(),
+    passivelyNoticedTraps: {},
+    recentlyNoticedPlayerMessages: {},
+    detectionAurasTemporarilyHidden: false,
+    hideAurasTimeout: null,
     macroExportedMacros: [],
     macroExportStates: {},
     macroExportDoorStates: {},
@@ -1158,11 +1164,6 @@ var TrapSystem = (function (exports) {
        */
       async checkTrapTrigger(movedToken, prevX, prevY) {
           if (!movedToken) return;
-          
-          if (!Config.state.triggersEnabled) {
-              TrapUtils.log('Triggers disabled', 'debug');
-              return;
-          }
 
           // Ignore if the moved token itself is a trap
           if (TrapUtils.isTrap(movedToken)) {
@@ -1183,8 +1184,8 @@ var TrapSystem = (function (exports) {
           }
 
           // If safe move token, skip
-          if (Config.state.safeMoveTokens.has(movedToken.id)) {
-              Config.state.safeMoveTokens.delete(movedToken.id);
+          if (State.safeMoveTokens.has(movedToken.id)) {
+              State.safeMoveTokens.delete(movedToken.id);
               return;
           }
 
@@ -1412,7 +1413,7 @@ var TrapSystem = (function (exports) {
           let finalPos;
 
           const getOccupiedPixelPositions = () => {
-              return Object.entries(Config.state.lockedTokens)
+              return Object.entries(State.lockedTokens)
                   .filter(([id, v]) => v.trapToken === trapToken.id && id !== movedToken.id)
                   .map(([id, _]) => {
                       const t = getObj("graphic", id);
@@ -1613,15 +1614,15 @@ var TrapSystem = (function (exports) {
           const observerId = charId || triggeringToken.id;
 
           // Ensure passivelyNoticedTraps is initialized
-          if (typeof Config.state.passivelyNoticedTraps !== 'object' || Config.state.passivelyNoticedTraps === null) {
-              Config.state.passivelyNoticedTraps = {};
+          if (typeof State.passivelyNoticedTraps !== 'object' || State.passivelyNoticedTraps === null) {
+              State.passivelyNoticedTraps = {};
           }
 
           // Update state that this character has noticed this trap
-          if (!Config.state.passivelyNoticedTraps[noticedTrap.id]) {
-              Config.state.passivelyNoticedTraps[noticedTrap.id] = {};
+          if (!State.passivelyNoticedTraps[noticedTrap.id]) {
+              State.passivelyNoticedTraps[noticedTrap.id] = {};
           }
-          Config.state.passivelyNoticedTraps[noticedTrap.id][observerId] = true;
+          State.passivelyNoticedTraps[noticedTrap.id][observerId] = true;
 
           // Persistently mark the trap as detected in its notes
           let notes = noticedTrap.get("gmnotes");
@@ -1718,16 +1719,16 @@ var TrapSystem = (function (exports) {
           const currentTime = Date.now();
           const debounceTime = Config.messages.passiveNoticeDebounceTime || 100000; // Default 100s
 
-          if (!Config.state.recentlyNoticedPlayerMessages[charId]) {
-              Config.state.recentlyNoticedPlayerMessages[charId] = [];
+          if (!State.recentlyNoticedPlayerMessages[charId]) {
+              State.recentlyNoticedPlayerMessages[charId] = [];
           }
 
           // Filter out old messages
-          Config.state.recentlyNoticedPlayerMessages[charId] = Config.state.recentlyNoticedPlayerMessages[charId].filter(
+          State.recentlyNoticedPlayerMessages[charId] = State.recentlyNoticedPlayerMessages[charId].filter(
               entry => (currentTime - entry.timestamp) < debounceTime
           );
 
-          const alreadySentRecently = Config.state.recentlyNoticedPlayerMessages[charId].some(
+          const alreadySentRecently = State.recentlyNoticedPlayerMessages[charId].some(
               entry => entry.messageContent === finalPlayerMsg
           );
 
@@ -1743,7 +1744,7 @@ var TrapSystem = (function (exports) {
                   }
               });
               // Record this message as sent
-              Config.state.recentlyNoticedPlayerMessages[charId].push({ 
+              State.recentlyNoticedPlayerMessages[charId].push({ 
                   messageContent: finalPlayerMsg, 
                   timestamp: currentTime 
               });
@@ -1879,7 +1880,7 @@ var TrapSystem = (function (exports) {
           if (!trapToken || !TrapUtils.isTrap(trapToken)) return;
 
           // Check for global hide
-          if (Config.state.detectionAurasTemporarilyHidden) {
+          if (State.detectionAurasTemporarilyHidden) {
               trapToken.set({ aura2_radius: '' });
               return;
           }
@@ -1954,8 +1955,8 @@ var TrapSystem = (function (exports) {
           const observerId = observerToken.get('represents') || observerToken.id;
 
           // Check if observer has already noticed this trap
-          const alreadyNoticed = Config.state.passivelyNoticedTraps[trapToken.id] && 
-                                Config.state.passivelyNoticedTraps[trapToken.id][observerId];
+          const alreadyNoticed = State.passivelyNoticedTraps[trapToken.id] && 
+                                State.passivelyNoticedTraps[trapToken.id][observerId];
           if (alreadyNoticed) {
               if (Config.DEBUG) {
                   TrapUtils.log(`Passive Notice SKIPPED for trap ${trapToken.id}: Observer ${observerId} has already noticed it.`, 'debug');
@@ -2068,7 +2069,7 @@ var TrapSystem = (function (exports) {
               const trapId = selectedToken.id;
               const trapName = selectedToken.get("name") || `Trap ID ${trapId}`;
               
-              if (Config.state.passivelyNoticedTraps && Config.state.passivelyNoticedTraps[trapId]) {
+              if (State.passivelyNoticedTraps && State.passivelyNoticedTraps[trapId]) {
                   // Remove the persistent 'detected' flag from notes
                   let notes = selectedToken.get("gmnotes");
                   let decodedNotes = "";
@@ -2084,7 +2085,7 @@ var TrapSystem = (function (exports) {
                       TrapUtils.parseTrapNotes(updatedNotes, selectedToken);
                   }
                   
-                  delete Config.state.passivelyNoticedTraps[trapId];
+                  delete State.passivelyNoticedTraps[trapId];
                   TrapUtils.log(`Passively noticed state for trap ID '${trapId}' has been cleared.`, 'info');
                   message = `✅ Passive detection state for selected trap '${trapName}' has been reset.`;
               } else {
@@ -2093,7 +2094,7 @@ var TrapSystem = (function (exports) {
               }
           } else {
               // Clear the entire passively noticed traps state
-              if (Object.keys(Config.state.passivelyNoticedTraps).length > 0) {
+              if (Object.keys(State.passivelyNoticedTraps).length > 0) {
                   // Find all traps and reset their auras if they were previously detected
                   const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapUtils.isTrap(t));
                   allTraps.forEach(trapToken => {
@@ -2113,7 +2114,7 @@ var TrapSystem = (function (exports) {
                       }
                   });
                   
-                  Config.state.passivelyNoticedTraps = {};
+                  State.passivelyNoticedTraps = {};
                   TrapUtils.log('All passivelyNoticedTraps have been cleared.', 'info');
                   message = '✅ All passive detection states have been reset. Characters will need to re-detect all traps.';
               } else {
@@ -2136,12 +2137,12 @@ var TrapSystem = (function (exports) {
        * @param {string} playerId - Player ID for messaging
        */
       hideAllAuras(durationMinutes, playerId) {
-          if (Config.state.hideAurasTimeout) {
-              clearTimeout(Config.state.hideAurasTimeout);
-              Config.state.hideAurasTimeout = null;
+          if (State.hideAurasTimeout) {
+              clearTimeout(State.hideAurasTimeout);
+              State.hideAurasTimeout = null;
           }
 
-          Config.state.detectionAurasTemporarilyHidden = true;
+          State.detectionAurasTemporarilyHidden = true;
 
           const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapUtils.isTrap(t));
           allTraps.forEach(trapToken => {
@@ -2152,7 +2153,7 @@ var TrapSystem = (function (exports) {
           
           const durationMs = parseFloat(durationMinutes) * 60 * 1000;
           if (!isNaN(durationMs) && durationMs > 0) {
-              Config.state.hideAurasTimeout = setTimeout(() => {
+              State.hideAurasTimeout = setTimeout(() => {
                   this.showAllAuras(playerId, true);
               }, durationMs);
               message += ` They will automatically reappear in ${durationMinutes} minute(s).`;
@@ -2167,12 +2168,12 @@ var TrapSystem = (function (exports) {
        * @param {boolean} isAuto - Whether this was called automatically
        */
       showAllAuras(playerId, isAuto = false) {
-          if (Config.state.hideAurasTimeout) {
-              clearTimeout(Config.state.hideAurasTimeout);
-              Config.state.hideAurasTimeout = null;
+          if (State.hideAurasTimeout) {
+              clearTimeout(State.hideAurasTimeout);
+              State.hideAurasTimeout = null;
           }
 
-          Config.state.detectionAurasTemporarilyHidden = false;
+          State.detectionAurasTemporarilyHidden = false;
 
           const allTraps = findObjs({ _type: "graphic" }).filter(t => TrapUtils.isTrap(t));
           allTraps.forEach(trapToken => {
@@ -3131,7 +3132,7 @@ var TrapSystem = (function (exports) {
           }
 
           const action = args[1];
-          const selectedToken = msg.selected ? getObj("graphic", msg.selected[0]._id) : null;
+          const selectedToken = msg.selected && msg.selected.length > 0 ? getObj("graphic", msg.selected[0]._id) : null;
 
           // Commands that don't require a selected token
           const noTokenCommands = [
@@ -3445,7 +3446,7 @@ var TrapSystem = (function (exports) {
       handleAllowMovement(args, msg) {
           const movementTokenId = args[2] && args[2].trim();
           if (movementTokenId === 'selected') {
-              if (!msg.selected || !msg.selected[0]) {
+              if (!msg.selected || msg.selected.length === 0) {
                   TrapUtils.chat("❌ Error: No token selected!");
                   return;
               }
@@ -3657,7 +3658,7 @@ var TrapSystem = (function (exports) {
           const rollType = args[6] || 'normal';
           const isAdvantageRoll = args[7] === '1';
           
-          let pendingCheck = Config.state.pendingChecksByChar[entityId] || Config.state.pendingChecks[entityId];
+          let pendingCheck = State.pendingChecksByChar[entityId] || State.pendingChecks[entityId];
           const trapToken = getObj("graphic", trapTokenId);
           
           if (!pendingCheck || !trapToken) {
@@ -3760,17 +3761,17 @@ var TrapSystem = (function (exports) {
               return;
           }
           
-          if (!Config.state.pendingChecks[playerid]) {
-              Config.state.pendingChecks[playerid] = {};
+          if (!State.pendingChecks[playerid]) {
+              State.pendingChecks[playerid] = {};
           }
           
-          Config.state.pendingChecks[playerid].characterId = character.id;
-          Config.state.pendingChecks[playerid].characterName = character.get("name");
-          Config.state.pendingChecks[playerid].triggeredTokenId = triggeredTokenId;
+          State.pendingChecks[playerid].characterId = character.id;
+          State.pendingChecks[playerid].characterName = character.get("name");
+          State.pendingChecks[playerid].triggeredTokenId = triggeredTokenId;
           
-          if (Config.state.pendingChecksByChar && character.id) {
-              Config.state.pendingChecksByChar[character.id] = {
-                  ...Config.state.pendingChecks[playerid],
+          if (State.pendingChecksByChar && character.id) {
+              State.pendingChecksByChar[character.id] = {
+                  ...State.pendingChecks[playerid],
                   token: trapToken
               };
           }
@@ -4630,7 +4631,7 @@ var TrapSystem = (function (exports) {
           if (!obj || !prev) return;
           try {
               // Token Locking Logic - prevent locked tokens from moving
-              if (Config.state.lockedTokens[obj.id] && (obj.get("left") !== prev.left || obj.get("top") !== prev.top)) {
+              if (State.lockedTokens[obj.id] && (obj.get("left") !== prev.left || obj.get("top") !== prev.top)) {
                   obj.set({ left: prev.left, top: prev.top });
                   return;
               }
@@ -4698,10 +4699,10 @@ var TrapSystem = (function (exports) {
                       PassiveDetection.updateAuraForDetectionRange(obj);
                   }
 
-                  if ((sizeChanged || positionOrRotationChanged) && Object.values(Config.state.lockedTokens).some(lock => lock.trapToken === obj.id)) {
+                  if ((sizeChanged || positionOrRotationChanged) && Object.values(State.lockedTokens).some(lock => lock.trapToken === obj.id)) {
                       // Update positions of tokens locked to this trap
-                      for (const lockedTokenId in Config.state.lockedTokens) {
-                          const lockData = Config.state.lockedTokens[lockedTokenId];
+                      for (const lockedTokenId in State.lockedTokens) {
+                          const lockData = State.lockedTokens[lockedTokenId];
                           if (lockData.trapToken === obj.id) {
                               const lockedToken = getObj("graphic", lockedTokenId);
                               if (lockedToken && lockData.relativeOffset) {

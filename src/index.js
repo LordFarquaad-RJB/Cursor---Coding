@@ -1,7 +1,7 @@
 // Entry point that stitches the modular files together.
 // For now we export an empty scaffold TrapSystem with utilities.
 
-import { Config } from './trap-core.js';
+import { Config, State } from './trap-core.js';
 import TrapUtils from './trap-utils.js';
 import { triggers } from './trap-triggers.js';
 import { MovementDetector } from './trap-detector.js';
@@ -72,7 +72,7 @@ if (typeof on !== 'undefined') {
         if (!obj || !prev) return;
         try {
             // Token Locking Logic - prevent locked tokens from moving
-            if (Config.state.lockedTokens[obj.id] && (obj.get("left") !== prev.left || obj.get("top") !== prev.top)) {
+            if (State.lockedTokens[obj.id] && (obj.get("left") !== prev.left || obj.get("top") !== prev.top)) {
                 obj.set({ left: prev.left, top: prev.top });
                 return;
             }
@@ -140,10 +140,10 @@ if (typeof on !== 'undefined') {
                     PassiveDetection.updateAuraForDetectionRange(obj);
                 }
 
-                if ((sizeChanged || positionOrRotationChanged) && Object.values(Config.state.lockedTokens).some(lock => lock.trapToken === obj.id)) {
+                if ((sizeChanged || positionOrRotationChanged) && Object.values(State.lockedTokens).some(lock => lock.trapToken === obj.id)) {
                     // Update positions of tokens locked to this trap
-                    for (const lockedTokenId in Config.state.lockedTokens) {
-                        const lockData = Config.state.lockedTokens[lockedTokenId];
+                    for (const lockedTokenId in State.lockedTokens) {
+                        const lockData = State.lockedTokens[lockedTokenId];
                         if (lockData.trapToken === obj.id) {
                             const lockedToken = getObj("graphic", lockedTokenId);
                             if (lockedToken && lockData.relativeOffset) {
