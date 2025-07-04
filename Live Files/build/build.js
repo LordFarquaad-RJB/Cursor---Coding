@@ -10,10 +10,11 @@ const path = require('path');
 
 // Build configuration
 const CONFIG = {
-    sourceDir: './modules',
-    outputDir: './',
+    sourceDir: '../modules',
+    sourceSrc: '../src',
+    outputDir: '../',
     outputFile: 'Live-SYS-ShopSystem-Built.js',
-    originalFile: 'Live-SYS-ShopSystem.js',
+    originalFile: '../src/Live-SYS-ShopSystem.js',
     
     // Module load order (dependencies first)
     moduleOrder: [
@@ -52,8 +53,9 @@ const customOutput = outputIndex !== -1 ? args[outputIndex + 1] : null;
  * Main build function
  */
 function build() {
-    console.log('� Building ShopSystem...');
+    console.log('🚀 Building ShopSystem...');
     console.log(`Mode: ${isDev ? 'Development' : 'Production'}`);
+    console.log(`Working directory: ${process.cwd()}`);
     
     try {
         const modules = loadModules();
@@ -67,6 +69,7 @@ function build() {
         
     } catch (error) {
         console.error(`❌ Build failed: ${error.message}`);
+        console.error(`Error details: ${error.stack}`);
         process.exit(1);
     }
 }
@@ -79,6 +82,7 @@ function loadModules() {
     const loadedModules = new Set();
     
     console.log('📦 Loading modules...');
+    console.log(`📁 Source directory: ${path.resolve(CONFIG.sourceDir)}`);
     
     // Load modules in specified order
     for (const moduleFile of CONFIG.moduleOrder) {
@@ -95,7 +99,7 @@ function loadModules() {
             loadedModules.add(moduleFile);
         } else {
             if (CONFIG.requiredModules.includes(moduleFile)) {
-                throw new Error(`Required module not found: ${moduleFile}`);
+                throw new Error(`Required module not found: ${moduleFile} at ${modulePath}`);
             } else {
                 console.log(`  ⚠️  ${moduleFile} (optional, not found)`);
             }
@@ -113,7 +117,7 @@ function loadModules() {
             required: true
         });
     } else {
-        throw new Error('index.js not found');
+        throw new Error(`index.js not found at ${indexPath}`);
     }
     
     return modules;
@@ -294,7 +298,7 @@ function writeOutput(content, outputPath) {
     // Log file size
     const stats = fs.statSync(fullPath);
     const sizeKB = (stats.size / 1024).toFixed(2);
-    console.log(`📄 Output file: ${sizeKB} KB`);
+    console.log(`📄 Output file: ${sizeKB} KB at ${fullPath}`);
 }
 
 /**
@@ -303,41 +307,41 @@ function writeOutput(content, outputPath) {
 function setupWatchMode() {
     console.log('👀 Watch mode enabled - watching for changes...');
     
-    const chokidar = require('chokidar');
-    const watcher = chokidar.watch([
-        CONFIG.sourceDir + '/**/*.js',
-        CONFIG.originalFile
-    ]);
-    
-    let buildTimeout;
-    
-    watcher.on('change', (path) => {
-        console.log(`📝 File changed: ${path}`);
-        
-        // Debounce builds
-        clearTimeout(buildTimeout);
-        buildTimeout = setTimeout(() => {
-            console.log('🔄 Rebuilding...');
-            build();
-        }, 500);
-    });
-    
-    watcher.on('error', error => {
-        console.error(`Watch error: ${error}`);
-    });
-    
-    // Initial build
-    build();
-}
-
-// Main execution
-if (watchMode) {
     try {
-        setupWatchMode();
+        const chokidar = require('chokidar');
+        const watcher = chokidar.watch([
+            CONFIG.sourceDir + '/**/*.js',
+            CONFIG.originalFile
+        ]);
+        
+        let buildTimeout;
+        
+        watcher.on('change', (path) => {
+            console.log(`📝 File changed: ${path}`);
+            
+            // Debounce builds
+            clearTimeout(buildTimeout);
+            buildTimeout = setTimeout(() => {
+                console.log('🔄 Rebuilding...');
+                build();
+            }, 500);
+        });
+        
+        watcher.on('error', error => {
+            console.error(`Watch error: ${error}`);
+        });
+        
+        // Initial build
+        build();
     } catch (error) {
         console.log('⚠️ Watch mode requires chokidar package. Running single build instead.');
         build();
     }
+}
+
+// Main execution
+if (watchMode) {
+    setupWatchMode();
 } else {
     build();
 }

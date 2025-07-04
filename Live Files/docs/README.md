@@ -61,14 +61,33 @@ A comprehensive modular refactoring of the Live-SYS-ShopSystem for Roll20, trans
 4. All original functionality preserved with improved performance
 
 ### **Development Setup**
+
+#### From Project Root (Recommended):
 ```bash
 # Production build (recommended for Roll20)
-node build.js
+./build.sh
 
 # Development build (includes original file for reference)
-node build.js --dev
+./build.sh --dev
 
 # Watch mode for development
+./build.sh --watch
+
+# Custom output filename
+./build.sh --output MyCustomShop.js
+```
+
+#### From Build Directory:
+```bash
+cd build
+
+# Production build
+node build.js
+
+# Development build
+node build.js --dev
+
+# Watch mode
 node build.js --watch
 ```
 
