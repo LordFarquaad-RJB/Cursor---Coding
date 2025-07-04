@@ -188,7 +188,8 @@ export function executeMacro(commandString, tagToIdMap = {}) {
   // Replace tags with IDs
   for (const [tag, tokenId] of Object.entries(tagToIdMap)) {
     if (tokenId) {
-      const tagRegex = new RegExp(`<&${tag}>`, 'g');
+      const escapedTag = escapeRegExp(tag);
+      const tagRegex = new RegExp(`<&${escapedTag}>`, 'g');
       processedCommand = processedCommand.replace(tagRegex, tokenId);
     }
   }
@@ -406,7 +407,8 @@ export function parseTrapNotes(rawNotes, token = null) {
   if (!triggerMatch && !detectionMatch) return null;
   
   const getSetting = (body, key) => {
-    const s = new RegExp(`${key}:\\s*\\[([^\\]]*)\\]`, 'i').exec(body);
+    const escapedKey = escapeRegExp(key);
+    const s = new RegExp(`${escapedKey}:\\s*\\[([^\\]]*)\\]`, 'i').exec(body);
     return s ? s[1].trim() : null;
   };
   
@@ -532,7 +534,8 @@ export function updateTrapUses(token, current, max, armed = null) {
   let dec = notes;
   try { dec = decodeURIComponent(notes); } catch (_) {}
   const repl = (field, value) => {
-    const re = new RegExp(`${field}:\\s*\\[[^\\]]*\\]`);
+    const escapedField = escapeRegExp(field);
+    const re = new RegExp(`${escapedField}:\\s*\\[[^\\]]*\\]`);
     if (re.test(dec)) dec = dec.replace(re, `${field}:[${value}]`);
     else dec = dec.replace(/\{!traptrigger/, `{!traptrigger ${field}:[${value}]`);
   };
@@ -606,4 +609,11 @@ export function toggleIgnoreTraps(token) {
     chat(`${token.get("name") || "Token"} is now immune to traps.`);
     log(`Added trap immunity to token ${token.id}`, 'info');
   }
+}
+
+/**
+ * Escape special regex characters to prevent ReDoS attacks
+ */
+export function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

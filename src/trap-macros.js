@@ -1,7 +1,7 @@
 // src/trap-macros.js
 // Macro execution & export logic
 
-import TrapUtils from './trap-utils.js';
+import TrapUtils, { escapeRegExp } from './trap-utils.js';
 import { Config, State } from './trap-core.js';
 
 // Create TrapSystem reference for compatibility
@@ -26,33 +26,19 @@ function buildTagToIdMap(tokens = []) {
 }
 
 // Replace macro placeholders with actual token IDs
-function replaceMacroPlaceholdersWithTags(macroString, tagMap = {}) {
+function replaceMacroPlaceholdersWithTags(macroString, tagToIdMap) {
   if (!macroString || typeof macroString !== 'string') return macroString;
   
-  let processed = macroString;
-  
-  // Replace @{target|...} patterns
-  processed = processed.replace(/@\{target\|([^}]+)\}/g, (match, property) => {
-    return `@{target|${property}}`;
-  });
-  
-  // Replace @{selected|...} patterns  
-  processed = processed.replace(/@\{selected\|([^}]+)\}/g, (match, property) => {
-    return `@{selected|${property}}`;
-  });
-  
-  // Replace custom tags like @{goblin|token_id}
-  Object.keys(tagMap).forEach(tag => {
-    const regex = new RegExp(`@\\{${tag}\\|([^}]+)\\}`, 'gi');
-    processed = processed.replace(regex, (match, property) => {
-      if (property === 'token_id') {
-        return tagMap[tag];
-      }
-      return `@{${tagMap[tag]}|${property}}`;
-    });
-  });
-  
-  return processed;
+  let result = macroString;
+  for (const [tag, tokenId] of Object.entries(tagToIdMap)) {
+    if (tokenId) {
+      // Use escapeRegExp to prevent ReDoS attacks
+      const escapedTag = escapeRegExp(tag);
+      const regex = new RegExp(`@\\{${escapedTag}\\|([^}]+)\\}`, 'gi');
+      result = result.replace(regex, tokenId);
+    }
+  }
+  return result;
 }
 
 // Execute a macro string (delegates to Roll20's sendChat)

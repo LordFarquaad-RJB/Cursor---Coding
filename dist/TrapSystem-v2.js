@@ -277,7 +277,8 @@ var TrapSystem = (function (exports) {
     // Replace tags with IDs
     for (const [tag, tokenId] of Object.entries(tagToIdMap)) {
       if (tokenId) {
-        const tagRegex = new RegExp(`<&${tag}>`, 'g');
+        const escapedTag = escapeRegExp(tag);
+        const tagRegex = new RegExp(`<&${escapedTag}>`, 'g');
         processedCommand = processedCommand.replace(tagRegex, tokenId);
       }
     }
@@ -495,7 +496,8 @@ var TrapSystem = (function (exports) {
     if (!triggerMatch && !detectionMatch) return null;
     
     const getSetting = (body, key) => {
-      const s = new RegExp(`${key}:\\s*\\[([^\\]]*)\\]`, 'i').exec(body);
+      const escapedKey = escapeRegExp(key);
+      const s = new RegExp(`${escapedKey}:\\s*\\[([^\\]]*)\\]`, 'i').exec(body);
       return s ? s[1].trim() : null;
     };
     
@@ -621,7 +623,8 @@ var TrapSystem = (function (exports) {
     let dec = notes;
     try { dec = decodeURIComponent(notes); } catch (_) {}
     const repl = (field, value) => {
-      const re = new RegExp(`${field}:\\s*\\[[^\\]]*\\]`);
+      const escapedField = escapeRegExp(field);
+      const re = new RegExp(`${escapedField}:\\s*\\[[^\\]]*\\]`);
       if (re.test(dec)) dec = dec.replace(re, `${field}:[${value}]`);
       else dec = dec.replace(/\{!traptrigger/, `{!traptrigger ${field}:[${value}]`);
     };
@@ -646,6 +649,13 @@ var TrapSystem = (function (exports) {
     calculateDynamicAuraRadius,
     updateTrapUses
   });
+
+  /**
+   * Escape special regex characters to prevent ReDoS attacks
+   */
+  function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 
   // src/trap-ui.js
   // Chat/menu rendering utilities.
@@ -2575,33 +2585,19 @@ var TrapSystem = (function (exports) {
   }
 
   // Replace macro placeholders with actual token IDs
-  function replaceMacroPlaceholdersWithTags(macroString, tagMap = {}) {
+  function replaceMacroPlaceholdersWithTags(macroString, tagToIdMap) {
     if (!macroString || typeof macroString !== 'string') return macroString;
     
-    let processed = macroString;
-    
-    // Replace @{target|...} patterns
-    processed = processed.replace(/@\{target\|([^}]+)\}/g, (match, property) => {
-      return `@{target|${property}}`;
-    });
-    
-    // Replace @{selected|...} patterns  
-    processed = processed.replace(/@\{selected\|([^}]+)\}/g, (match, property) => {
-      return `@{selected|${property}}`;
-    });
-    
-    // Replace custom tags like @{goblin|token_id}
-    Object.keys(tagMap).forEach(tag => {
-      const regex = new RegExp(`@\\{${tag}\\|([^}]+)\\}`, 'gi');
-      processed = processed.replace(regex, (match, property) => {
-        if (property === 'token_id') {
-          return tagMap[tag];
-        }
-        return `@{${tagMap[tag]}|${property}}`;
-      });
-    });
-    
-    return processed;
+    let result = macroString;
+    for (const [tag, tokenId] of Object.entries(tagToIdMap)) {
+      if (tokenId) {
+        // Use escapeRegExp to prevent ReDoS attacks
+        const escapedTag = escapeRegExp(tag);
+        const regex = new RegExp(`@\\{${escapedTag}\\|([^}]+)\\}`, 'gi');
+        result = result.replace(regex, tokenId);
+      }
+    }
+    return result;
   }
 
   // Execute a macro string (delegates to Roll20's sendChat)
@@ -4780,3 +4776,4 @@ var TrapSystem = (function (exports) {
   return exports;
 
 })({});
+//# sourceMappingURL=TrapSystem-v2.js.map
