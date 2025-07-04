@@ -26,25 +26,25 @@ const StockManager = {
     
     /**
      * Add item to shop stock
+     * @param {Object} shop - Shop object to modify
+     * @param {Function} databaseListItems - Database function to list items
      * @param {string} itemId - Item ID to add
      * @param {number} quantity - Quantity to add
      * @param {Object} customPrice - Custom price override
      * @returns {Promise} Promise resolving to operation result
      */
-    async addItemToStock(itemId, quantity = 1, customPrice = null) {
-        if (!ShopSystem.state.activeShop) {
-            return { success: false, error: "No active shop selected" };
+    async addItemToStock(shop, databaseListItems, itemId, quantity = 1, customPrice = null) {
+        if (!shop) {
+            return { success: false, error: "No shop provided" };
         }
         
         try {
-            const shop = ShopSystem.state.activeShop;
-            
-            if (!shop || !shop.id) {
-                throw new Error("Active shop is not properly set");
+            if (!shop.id) {
+                throw new Error("Shop is not properly configured");
             }
             
             // Get item from database
-            const items = await ShopSystem.database.listItems('all', 'all');
+            const items = await databaseListItems('all', 'all');
             const item = items.find(i => i.id === itemId);
             
             if (!item) {
@@ -65,7 +65,7 @@ const StockManager = {
                 const existingItem = shop.inventory[item.category][existingItemIndex];
                 if (customPrice) {
                     existingItem.price = customPrice;
-                    this.log(`Updated price of ${item.name} to ${ShopSystemModules.currency.formatCurrency(customPrice)}`, "info");
+                    this.log(`Updated price of ${item.name} to ${this.formatCurrency(customPrice)}`, "info");
                 }
                 existingItem.quantity += quantity;
                 existingItem.maxStock = (existingItem.maxStock || 0) + quantity;
@@ -83,7 +83,7 @@ const StockManager = {
                     description: item.description || ""
                 });
                 
-                const logPrice = customPrice ? ShopSystemModules.currency.formatCurrency(customPrice) : 'default';
+                const logPrice = customPrice ? this.formatCurrency(customPrice) : 'default';
                 this.log(`Added ${quantity} ${item.name} (Price: ${logPrice}, MaxStock: ${quantity}) to shop inventory`, "info");
             }
             
@@ -107,17 +107,17 @@ const StockManager = {
     
     /**
      * Remove item from shop stock
+     * @param {Object} shop - Shop object to modify
      * @param {string} itemId - Item ID to remove
      * @param {number} quantity - Quantity to remove (0 = remove all)
      * @returns {boolean} Success status
      */
-    removeItemFromStock(itemId, quantity = 0) {
-        if (!ShopSystem.state.activeShop) {
-            this.log("No active shop selected", "error");
+    removeItemFromStock(shop, itemId, quantity = 0) {
+        if (!shop) {
+            this.log("No shop provided", "error");
             return false;
         }
         
-        const shop = ShopSystem.state.activeShop;
         let item = null;
         let itemCategory = '';
         let itemIndex = -1;
@@ -162,17 +162,17 @@ const StockManager = {
     
     /**
      * Set item maximum stock
+     * @param {Object} shop - Shop object to modify
      * @param {string} itemId - Item ID
      * @param {number} newMaxStock - New maximum stock value
      * @returns {boolean} Success status
      */
-    setItemMaxStock(itemId, newMaxStock) {
-        if (!ShopSystem.state.activeShop) {
-            this.log("No active shop selected", "error");
+    setItemMaxStock(shop, itemId, newMaxStock) {
+        if (!shop) {
+            this.log("No shop provided", "error");
             return false;
         }
         
-        const shop = ShopSystem.state.activeShop;
         let item = null;
         let itemCategory = '';
         let itemIndex = -1;
@@ -220,17 +220,17 @@ const StockManager = {
     
     /**
      * Set item current quantity
+     * @param {Object} shop - Shop object to modify
      * @param {string} itemId - Item ID
      * @param {number} newQuantity - New quantity
      * @returns {boolean} Success status
      */
-    setItemQuantity(itemId, newQuantity) {
-        if (!ShopSystem.state.activeShop) {
-            this.log("No active shop selected", "error");
+    setItemQuantity(shop, itemId, newQuantity) {
+        if (!shop) {
+            this.log("No shop provided", "error");
             return false;
         }
         
-        const shop = ShopSystem.state.activeShop;
         let item = null;
         
         // Find the item
@@ -267,17 +267,17 @@ const StockManager = {
     
     /**
      * Set item price
+     * @param {Object} shop - Shop object to modify
      * @param {string} itemId - Item ID
      * @param {Object} newPrice - New price object
      * @returns {boolean} Success status
      */
-    setItemPrice(itemId, newPrice) {
-        if (!ShopSystem.state.activeShop) {
-            this.log("No active shop selected", "error");
+    setItemPrice(shop, itemId, newPrice) {
+        if (!shop) {
+            this.log("No shop provided", "error");
             return false;
         }
         
-        const shop = ShopSystem.state.activeShop;
         let item = null;
         
         // Find the item
@@ -297,7 +297,7 @@ const StockManager = {
         }
         
         item.price = newPrice;
-        this.log(`Updated price of ${item.name} to ${ShopSystemModules.currency.formatCurrency(newPrice)}`, "info");
+        this.log(`Updated price of ${item.name} to ${this.formatCurrency(newPrice)}`, "info");
         
         // Save shop data
         const shopHandout = getObj("handout", shop.id);
@@ -311,10 +311,11 @@ const StockManager = {
     
     /**
      * Generate random stock for shop
+     * @param {Function} databaseListItems - Database function to list items
      * @param {Object} options - Generation options
      * @returns {Promise} Promise resolving to generated items
      */
-    async generateRandomStock(options = {}) {
+    async generateRandomStock(databaseListItems, options = {}) {
         const {
             numItems = this.config?.STOCK_GENERATION?.DEFAULT_RANDOM_ITEMS || 10,
             categories = this.config?.ITEM?.CATEGORIES || ['weapons', 'equipment', 'potions'],
@@ -324,7 +325,7 @@ const StockManager = {
         
         try {
             // Get all items from database
-            const allItems = await ShopSystem.database.listItems('all', 'all');
+            const allItems = await databaseListItems('all', 'all');
             
             if (!allItems || allItems.length === 0) {
                 throw new Error("No items found in database");
@@ -378,16 +379,16 @@ const StockManager = {
     
     /**
      * Restock shop to maximum levels
+     * @param {Object} shop - Shop object to restock
      * @param {Object} options - Restock options
      * @returns {number} Number of items restocked
      */
-    restockShop(options = {}) {
-        if (!ShopSystem.state.activeShop) {
-            this.log("No active shop selected", "error");
+    restockShop(shop, options = {}) {
+        if (!shop) {
+            this.log("No shop provided", "error");
             return 0;
         }
         
-        const shop = ShopSystem.state.activeShop;
         let itemsRestocked = 0;
         
         if (!shop.inventory) {
@@ -426,15 +427,15 @@ const StockManager = {
     
     /**
      * Clear all stock from shop
+     * @param {Object} shop - Shop object to clear
      * @returns {number} Number of items cleared
      */
-    clearAllStock() {
-        if (!ShopSystem.state.activeShop) {
-            this.log("No active shop selected", "error");
+    clearAllStock(shop) {
+        if (!shop) {
+            this.log("No shop provided", "error");
             return 0;
         }
         
-        const shop = ShopSystem.state.activeShop;
         let itemsCleared = 0;
         
         if (shop.inventory) {
@@ -490,10 +491,10 @@ const StockManager = {
                     if (item.quantity === 0) {
                         const maxStockDisplay = item.maxStock !== undefined ? item.maxStock : '?';
                         const outOfStockStr = `<span style="color:${qtyColor};font-weight:bold;">(🔴/${maxStockDisplay}) Out of Stock</span>`;
-                        nameAndPriceSection = `${rarityEmoji} ${outOfStockStr} - ${item.name} - <span style="color:inherit;">💰${ShopSystemModules.currency.formatCurrency(item.price)}</span>`;
+                        nameAndPriceSection = `${rarityEmoji} ${outOfStockStr} - ${item.name} - <span style="color:inherit;">💰${this.formatCurrency(item.price)}</span>`;
                     } else {
                         const qtyDisplay = `<span style="color:${qtyColor};font-weight:bold;">(${item.quantity}/${item.maxStock ?? item.quantity})</span>`;
-                        nameAndPriceSection = `${rarityEmoji} ${qtyDisplay} ${item.name} - <span style="color:inherit;">💰${ShopSystemModules.currency.formatCurrency(item.price)}</span>`;
+                        nameAndPriceSection = `${rarityEmoji} ${qtyDisplay} ${item.name} - <span style="color:inherit;">💰${this.formatCurrency(item.price)}</span>`;
                     }
                     
                     if (isHighlighted) {
@@ -643,49 +644,62 @@ const StockManager = {
     },
     
     /**
-     * Track last modified item for highlighting
+     * Track last modified item for highlighting (with safe state access)
      * @param {string} shopId - Shop ID
      * @param {string} itemId - Item ID
      */
     trackLastModifiedItem(shopId, itemId) {
-        if (!state.ShopSystem.lastModifiedStockItem) {
-            state.ShopSystem.lastModifiedStockItem = {};
+        // Safely check if state system exists
+        if (typeof state !== 'undefined' && state.ShopSystem) {
+            if (!state.ShopSystem.lastModifiedStockItem) {
+                state.ShopSystem.lastModifiedStockItem = {};
+            }
+            state.ShopSystem.lastModifiedStockItem[shopId] = itemId;
+            this.log(`Tracked last modified item for shop ${shopId}: ${itemId}`, 'debug');
+        } else {
+            this.log('State system not available for tracking modified items', 'debug');
         }
-        state.ShopSystem.lastModifiedStockItem[shopId] = itemId;
-        this.log(`Tracked last modified item for shop ${shopId}: ${itemId}`, 'debug');
     },
     
     /**
-     * Get last modified item for highlighting
+     * Get last modified item for highlighting (with safe state access)
      * @param {string} shopId - Shop ID
-     * @returns {string} Item ID
+     * @returns {string|null} Item ID or null
      */
     getLastModifiedItem(shopId) {
-        return state.ShopSystem.lastModifiedStockItem?.[shopId] || null;
+        if (typeof state !== 'undefined' && state.ShopSystem && state.ShopSystem.lastModifiedStockItem) {
+            return state.ShopSystem.lastModifiedStockItem[shopId] || null;
+        }
+        return null;
     },
     
     /**
-     * Get batch of items to highlight
+     * Get batch of items to highlight (with safe state access)
      * @param {string} shopId - Shop ID
      * @returns {Array} Array of item IDs
      */
     getHighlightBatch(shopId) {
-        return state.ShopSystem.justAddedStockIds?.[shopId] || [];
+        if (typeof state !== 'undefined' && state.ShopSystem && state.ShopSystem.justAddedStockIds) {
+            return state.ShopSystem.justAddedStockIds[shopId] || [];
+        }
+        return [];
     },
     
     /**
-     * Clear highlight tracking after display
+     * Clear highlight tracking after display (with safe state access)
      * @param {string} shopId - Shop ID
      */
     clearHighlightTracking(shopId) {
-        if (state.ShopSystem.justAddedStockIds?.[shopId]) {
-            delete state.ShopSystem.justAddedStockIds[shopId];
-            this.log(`Cleared batch highlight IDs for shop ${shopId}`, 'debug');
-        }
-        
-        if (state.ShopSystem.lastModifiedStockItem?.[shopId]) {
-            delete state.ShopSystem.lastModifiedStockItem[shopId];
-            this.log(`Cleared single highlight ID for shop ${shopId}`, 'debug');
+        if (typeof state !== 'undefined' && state.ShopSystem) {
+            if (state.ShopSystem.justAddedStockIds && state.ShopSystem.justAddedStockIds[shopId]) {
+                delete state.ShopSystem.justAddedStockIds[shopId];
+                this.log(`Cleared batch highlight IDs for shop ${shopId}`, 'debug');
+            }
+            
+            if (state.ShopSystem.lastModifiedStockItem && state.ShopSystem.lastModifiedStockItem[shopId]) {
+                delete state.ShopSystem.lastModifiedStockItem[shopId];
+                this.log(`Cleared single highlight ID for shop ${shopId}`, 'debug');
+            }
         }
     },
     
@@ -720,6 +734,25 @@ const StockManager = {
     log(message, type = 'info') {
         const prefix = this.config?.LOGGING?.PREFIX?.[type] || '📜';
         log(`${prefix} StockManager: ${message}`);
+    },
+    
+    /**
+     * Format currency using the currency manager or fallback
+     * @param {Object} currency - Currency object
+     * @returns {string} Formatted currency string
+     */
+    formatCurrency(currency) {
+        // Try to use the global currency manager if available
+        if (typeof ShopSystemModules !== 'undefined' && ShopSystemModules.currency) {
+            return ShopSystemModules.currency.formatCurrency(currency);
+        }
+        
+        // Fallback formatting
+        if (!currency) return "0 gp";
+        if (currency.gp) return `${currency.gp}gp`;
+        if (currency.sp) return `${currency.sp}sp`;
+        if (currency.cp) return `${currency.cp}cp`;
+        return "0 gp";
     }
 };
 

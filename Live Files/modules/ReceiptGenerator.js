@@ -25,6 +25,7 @@ const ReceiptGenerator = {
     
     /**
      * Generate a combined receipt for buy/sell transactions
+     * @param {Object} shop - Shop object for receipt header
      * @param {string} playerId - Player ID
      * @param {string} characterId - Character ID
      * @param {Array} buyItems - Items purchased
@@ -38,7 +39,7 @@ const ReceiptGenerator = {
      * @param {Object} oldCurrency - Player's currency before transaction
      * @param {Object} newCurrency - Player's currency after transaction
      */
-    generateCombinedReceipt(playerId, characterId, buyItems, sellItems, finalBuyCopper, finalSellCopper, 
+    generateCombinedReceipt(shop, playerId, characterId, buyItems, sellItems, finalBuyCopper, finalSellCopper, 
                            buyAdjustmentCopper, sellAdjustmentCopper, originalBuyCopper, originalSellCopper,
                            oldCurrency, newCurrency) {
         
@@ -51,13 +52,12 @@ const ReceiptGenerator = {
         const player = getObj('player', playerId);
         const playerName = player ? player.get('_displayname') : 'Unknown Player';
         const characterName = character.get('name');
-        const shop = ShopSystem.state.activeShop;
         const timestamp = new Date().toLocaleString();
         
         // Calculate net transaction
         const netTransactionCopper = finalSellCopper - finalBuyCopper;
         const transactionType = netTransactionCopper >= 0 ? "received" : "paid";
-        const netAmount = ShopSystemModules.currency.fromCopper(Math.abs(netTransactionCopper));
+        const netAmount = this.formatCurrency(this.fromCopper(Math.abs(netTransactionCopper)));
         
         // Build receipt content
         let receiptContent = this.buildReceiptHeader(shop, characterName, playerName, timestamp);
@@ -79,13 +79,14 @@ const ReceiptGenerator = {
         receiptContent += this.buildReceiptFooter();
         
         // Create handout for receipt
-        this.createReceiptHandout(playerId, characterName, receiptContent, timestamp);
+        this.createReceiptHandout(shop, playerId, characterName, receiptContent, timestamp);
         
         this.log(`Generated combined receipt for ${characterName} (${playerName})`, 'info');
     },
     
     /**
      * Generate a simple receipt for single-type transactions
+     * @param {Object} shop - Shop object for receipt header
      * @param {string} playerId - Player ID
      * @param {string} characterId - Character ID
      * @param {Array} items - Transaction items
@@ -94,7 +95,7 @@ const ReceiptGenerator = {
      * @param {Object} oldCurrency - Currency before transaction
      * @param {Object} newCurrency - Currency after transaction
      */
-    generateSimpleReceipt(playerId, characterId, items, transactionType, totalAmount, oldCurrency, newCurrency) {
+    generateSimpleReceipt(shop, playerId, characterId, items, transactionType, totalAmount, oldCurrency, newCurrency) {
         const character = getObj('character', characterId);
         if (!character) {
             this.log('Failed to generate receipt: Character not found', 'error');
@@ -104,31 +105,30 @@ const ReceiptGenerator = {
         const player = getObj('player', playerId);
         const playerName = player ? player.get('_displayname') : 'Unknown Player';
         const characterName = character.get('name');
-        const shop = ShopSystem.state.activeShop;
         const timestamp = new Date().toLocaleString();
         
         // Build receipt content
         let receiptContent = this.buildReceiptHeader(shop, characterName, playerName, timestamp);
         
         if (transactionType === 'buy') {
-            const totalCopper = ShopSystemModules.currency.toCopper(totalAmount);
+            const totalCopper = this.toCopper(totalAmount);
             receiptContent += this.buildBuySection(items, totalCopper, totalCopper, 0);
         } else if (transactionType === 'sell') {
-            const totalCopper = ShopSystemModules.currency.toCopper(totalAmount);
+            const totalCopper = this.toCopper(totalAmount);
             receiptContent += this.buildSellSection(items, totalCopper, totalCopper, 0);
         }
         
         // Add transaction summary
         const netCopper = transactionType === 'buy' ? 
-            -ShopSystemModules.currency.toCopper(totalAmount) : 
-            ShopSystemModules.currency.toCopper(totalAmount);
+            -this.toCopper(totalAmount) : 
+            this.toCopper(totalAmount);
         const transactionLabel = transactionType === 'buy' ? "paid" : "received";
         
         receiptContent += this.buildTransactionSummary(netCopper, transactionLabel, totalAmount, oldCurrency, newCurrency);
         receiptContent += this.buildReceiptFooter();
         
         // Create handout for receipt
-        this.createReceiptHandout(playerId, characterName, receiptContent, timestamp);
+        this.createReceiptHandout(shop, playerId, characterName, receiptContent, timestamp);
         
         this.log(`Generated ${transactionType} receipt for ${characterName} (${playerName})`, 'info');
     },
@@ -177,8 +177,8 @@ const ReceiptGenerator = {
 `;
         
         buyItems.forEach(item => {
-            const itemTotal = ShopSystemModules.currency.toCopper(item.price) * item.quantity;
-            const formattedTotal = ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(itemTotal));
+            const itemTotal = this.toCopper(item.price) * item.quantity;
+            const formattedTotal = this.formatCurrency(this.fromCopper(itemTotal));
             
             section += `
             <tr>
@@ -192,14 +192,14 @@ const ReceiptGenerator = {
         section += `
             <tr style="border-top: 1px solid #8B4513;">
                 <td colspan="2" style="padding: 5px 0; font-weight: bold;">Subtotal:</td>
-                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(originalCopper))}</td>
+                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${this.formatCurrency(this.fromCopper(originalCopper))}</td>
             </tr>
 `;
         
         // Add haggle adjustment if applicable
         if (adjustmentCopper !== 0) {
             const adjustmentType = adjustmentCopper < 0 ? "Discount" : "Markup";
-            const adjustmentAmount = ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(Math.abs(adjustmentCopper)));
+            const adjustmentAmount = this.formatCurrency(this.fromCopper(Math.abs(adjustmentCopper)));
             const adjustmentPercent = originalCopper > 0 ? Math.round(Math.abs(adjustmentCopper / originalCopper) * 100) : 0;
             
             section += `
@@ -213,7 +213,7 @@ const ReceiptGenerator = {
         section += `
             <tr style="border-top: 2px solid #8B4513;">
                 <td colspan="2" style="padding: 5px 0; font-weight: bold;">Total Paid:</td>
-                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(finalCopper))}</td>
+                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${this.formatCurrency(this.fromCopper(finalCopper))}</td>
             </tr>
         </table>
     </div>
@@ -238,8 +238,8 @@ const ReceiptGenerator = {
 `;
         
         sellItems.forEach(item => {
-            const itemTotal = ShopSystemModules.currency.toCopper(item.price) * item.quantity;
-            const formattedTotal = ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(itemTotal));
+            const itemTotal = this.toCopper(item.price) * item.quantity;
+            const formattedTotal = this.formatCurrency(this.fromCopper(itemTotal));
             
             section += `
             <tr>
@@ -253,14 +253,14 @@ const ReceiptGenerator = {
         section += `
             <tr style="border-top: 1px solid #8B4513;">
                 <td colspan="2" style="padding: 5px 0; font-weight: bold;">Subtotal:</td>
-                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(originalCopper))}</td>
+                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${this.formatCurrency(this.fromCopper(originalCopper))}</td>
             </tr>
 `;
         
         // Add haggle adjustment if applicable
         if (adjustmentCopper !== 0) {
             const adjustmentType = adjustmentCopper > 0 ? "Bonus" : "Penalty";
-            const adjustmentAmount = ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(Math.abs(adjustmentCopper)));
+            const adjustmentAmount = this.formatCurrency(this.fromCopper(Math.abs(adjustmentCopper)));
             const adjustmentPercent = originalCopper > 0 ? Math.round(Math.abs(adjustmentCopper / originalCopper) * 100) : 0;
             
             section += `
@@ -274,7 +274,7 @@ const ReceiptGenerator = {
         section += `
             <tr style="border-top: 2px solid #8B4513;">
                 <td colspan="2" style="padding: 5px 0; font-weight: bold;">Total Received:</td>
-                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${ShopSystemModules.currency.formatCurrency(ShopSystemModules.currency.fromCopper(finalCopper))}</td>
+                <td style="text-align: right; padding: 5px 0; font-weight: bold;">${this.formatCurrency(this.fromCopper(finalCopper))}</td>
             </tr>
         </table>
     </div>
@@ -293,9 +293,9 @@ const ReceiptGenerator = {
      * @returns {string} Summary section HTML
      */
     buildTransactionSummary(netTransactionCopper, transactionType, netAmount, oldCurrency, newCurrency) {
-        const netAmountFormatted = ShopSystemModules.currency.formatCurrency(netAmount);
-        const oldCurrencyFormatted = ShopSystemModules.currency.formatCurrency(oldCurrency);
-        const newCurrencyFormatted = ShopSystemModules.currency.formatCurrency(newCurrency);
+        const netAmountFormatted = this.formatCurrency(netAmount);
+        const oldCurrencyFormatted = this.formatCurrency(oldCurrency);
+        const newCurrencyFormatted = this.formatCurrency(newCurrency);
         
         return `
     <div style="margin-bottom: 15px; padding: 10px; background: #F5F5DC; border: 1px solid #8B4513;">
@@ -322,27 +322,53 @@ const ReceiptGenerator = {
     },
     
     /**
-     * Create a handout for the receipt
+     * Create a handout for the receipt with proper duplicate numbering
+     * @param {Object} shop - Shop object for name generation
      * @param {string} playerId - Player ID
      * @param {string} characterName - Character name
      * @param {string} receiptContent - Receipt HTML content
      * @param {string} timestamp - Transaction timestamp
      */
-    createReceiptHandout(playerId, characterName, receiptContent, timestamp) {
+    createReceiptHandout(shop, playerId, characterName, receiptContent, timestamp) {
         try {
-            const shop = ShopSystem.state.activeShop;
             const shopName = shop ? shop.name : 'Unknown Shop';
-            const handoutName = `Receipt: ${characterName} - ${shopName} - ${new Date().toLocaleDateString()}`;
+            const baseHandoutName = `Receipt: ${characterName} - ${shopName} - ${new Date().toLocaleDateString()}`;
             
-            // Check if similar recent receipt exists
-            const existingReceipts = findObjs({
-                _type: 'handout',
-                name: handoutName
+            // Get all existing receipts with similar names to find next number
+            const allHandouts = findObjs({
+                _type: 'handout'
             });
             
-            let finalHandoutName = handoutName;
+            // Find existing receipts with the same base name or numbered versions
+            const existingReceipts = allHandouts.filter(handout => {
+                const name = handout.get('name');
+                return name === baseHandoutName || name.startsWith(baseHandoutName + ' (');
+            });
+            
+            let finalHandoutName = baseHandoutName;
+            
             if (existingReceipts.length > 0) {
-                finalHandoutName = `${handoutName} (${existingReceipts.length + 1})`;
+                // Find the highest existing number
+                let maxNumber = 0;
+                
+                existingReceipts.forEach(handout => {
+                    const name = handout.get('name');
+                    
+                    if (name === baseHandoutName) {
+                        // The base name exists (counts as number 1)
+                        maxNumber = Math.max(maxNumber, 1);
+                    } else {
+                        // Check for numbered versions like "Receipt... (2)", "Receipt... (3)", etc.
+                        const match = name.match(/^(.+) \((\d+)\)$/);
+                        if (match && match[1] === baseHandoutName) {
+                            const number = parseInt(match[2]);
+                            maxNumber = Math.max(maxNumber, number);
+                        }
+                    }
+                });
+                
+                // Create the next number in sequence
+                finalHandoutName = `${baseHandoutName} (${maxNumber + 1})`;
             }
             
             const receiptHandout = createObj('handout', {
@@ -483,8 +509,133 @@ const ReceiptGenerator = {
 </div>
 `;
         
-        this.createReceiptHandout(playerId, 'Failed Transaction', failureContent, timestamp);
+        this.createReceiptHandout(null, playerId, 'Failed Transaction', failureContent, timestamp);
         this.log(`Generated failure receipt for ${playerName}: ${reason}`, 'info');
+    },
+    
+    // ===================================================================
+    // CURRENCY UTILITY METHODS (Local fallbacks)
+    // ===================================================================
+    
+    /**
+     * Convert currency to copper (fallback method)
+     * @param {Object|number} currency - Currency object or number
+     * @returns {number} Total value in copper pieces
+     */
+    toCopper(currency) {
+        // Try to use the global currency manager if available
+        if (typeof ShopSystemModules !== 'undefined' && ShopSystemModules.currency) {
+            return ShopSystemModules.currency.toCopper(currency);
+        }
+        
+        // Fallback implementation
+        if (typeof currency === 'number') {
+            return currency;
+        }
+        
+        if (!currency) return 0;
+        
+        let copper = 0;
+        if (currency.cp) copper += currency.cp;
+        if (currency.sp) copper += currency.sp * 10;
+        if (currency.ep) copper += currency.ep * 50;
+        if (currency.gp) copper += currency.gp * 100;
+        if (currency.pp) copper += currency.pp * 1000;
+        
+        return copper;
+    },
+    
+    /**
+     * Convert copper to currency object (fallback method)
+     * @param {number} copper - Total copper pieces
+     * @returns {Object} Currency object
+     */
+    fromCopper(copper) {
+        // Try to use the global currency manager if available
+        if (typeof ShopSystemModules !== 'undefined' && ShopSystemModules.currency) {
+            return ShopSystemModules.currency.fromCopper(copper);
+        }
+        
+        // Fallback implementation
+        if (!copper || copper < 0) return { cp: 0 };
+        
+        if (copper >= 1000) {
+            const currency = {
+                pp: Math.floor(copper / 1000)
+            };
+            
+            copper %= 1000;
+            
+            if (copper >= 100) {
+                currency.gp = Math.floor(copper / 100);
+                copper %= 100;
+            }
+            
+            if (copper >= 10) {
+                currency.sp = Math.floor(copper / 10);
+                copper %= 10;
+            }
+            
+            if (copper > 0) {
+                currency.cp = copper;
+            }
+            
+            return currency;
+        } else if (copper >= 100) {
+            const currency = {
+                gp: Math.floor(copper / 100)
+            };
+            
+            copper %= 100;
+            
+            if (copper >= 10) {
+                currency.sp = Math.floor(copper / 10);
+                copper %= 10;
+            }
+            
+            if (copper > 0) {
+                currency.cp = copper;
+            }
+            
+            return currency;
+        } else {
+            const currency = {};
+            
+            if (copper >= 10) {
+                currency.sp = Math.floor(copper / 10);
+                copper %= 10;
+            }
+            
+            if (copper > 0 || Object.keys(currency).length === 0) {
+                currency.cp = copper;
+            }
+            
+            return currency;
+        }
+    },
+    
+    /**
+     * Format currency for display (fallback method)
+     * @param {Object} currency - Currency object
+     * @returns {string} Formatted currency string
+     */
+    formatCurrency(currency) {
+        // Try to use the global currency manager if available
+        if (typeof ShopSystemModules !== 'undefined' && ShopSystemModules.currency) {
+            return ShopSystemModules.currency.formatCurrency(currency);
+        }
+        
+        // Fallback implementation
+        if (!currency) return "0 gp";
+        
+        const parts = [];
+        if (currency.pp) parts.push(`${currency.pp}pp`);
+        if (currency.gp) parts.push(`${currency.gp}gp`);
+        if (currency.ep) parts.push(`${currency.ep}ep`);
+        if (currency.sp) parts.push(`${currency.sp}sp`);
+        if (currency.cp) parts.push(`${currency.cp}cp`);
+        
+        return parts.length > 0 ? parts.join(" ") : "0 gp";
     },
     
     // Helper methods
