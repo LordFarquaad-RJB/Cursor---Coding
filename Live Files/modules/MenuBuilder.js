@@ -183,7 +183,7 @@ const MenuBuilder = {
         }
         
         const title = isGM ? `${shop.name} (GM View)` : shop.name;
-        const titleEmoji = this.config?.getCategoryEmoji('shop') || '🏪';
+        const titleEmoji = this.getUIEmoji('shop') || '🏪';
         
         return this.createMenu(title, sections, { titleEmoji });
     },

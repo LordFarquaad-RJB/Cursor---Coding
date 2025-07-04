@@ -1,7 +1,7 @@
 /**
  * Live-SYS-ShopSystem - Built Version
  * 
- * Generated: 2025-07-04T15:04:50.704Z
+ * Generated: 2025-07-04T15:13:16.840Z
  * Mode: Production
  * Build System: v2.0
  * 
@@ -954,7 +954,7 @@ const MenuBuilder = {
         }
         
         const title = isGM ? `${shop.name} (GM View)` : shop.name;
-        const titleEmoji = this.config?.getCategoryEmoji('shop') || '🏪';
+        const titleEmoji = this.getUIEmoji('shop') || '🏪';
         
         return this.createMenu(title, sections, { titleEmoji });
     },
@@ -3450,9 +3450,18 @@ const DatabaseManager = {
     processItem(item) {
         // Ensure required fields
         if (!item.id) {
-            item.id = item.name ? 
-                item.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') : 
-                `item_${Date.now()}`;
+            if (item.name) {
+                // Generate base ID from name
+                const baseId = item.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                // Add unique suffix to prevent collisions
+                const uniqueSuffix = Math.random().toString(36).substr(2, 8);
+                item.id = `${baseId}_${uniqueSuffix}`;
+            } else {
+                // Fallback with high-resolution timestamp and random suffix
+                const timestamp = Date.now();
+                const randomSuffix = Math.random().toString(36).substr(2, 8);
+                item.id = `item_${timestamp}_${randomSuffix}`;
+            }
         }
         
         // Ensure price is valid
@@ -3662,13 +3671,11 @@ const DatabaseManager = {
                         }
                     }
                     
-                    // Save updated database
-                    handout.get("gmnotes", (currentNotes) => {
-                        const currentData = JSON.parse(this.cleanHandoutNotes(currentNotes));
-                        const updatedData = { ...currentData, items: data.items };
-                        handout.set("gmnotes", JSON.stringify(updatedData, null, 2));
-                        resolve(results);
-                    });
+                    // Save updated database without race condition
+                    // Use the original data loaded at the start to preserve other fields
+                    const updatedData = { ...data, items: data.items };
+                    handout.set("gmnotes", JSON.stringify(updatedData, null, 2));
+                    resolve(results);
                     
                 } catch (error) {
                     this.log(`Error in batch import: ${error.message}`, "error");
