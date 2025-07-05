@@ -1,0 +1,62 @@
+{
+  "name": "live-sys-shopsystem",
+  "version": "1.0.0",
+  "description": "Roll20 Shop System - Modular Build System",
+  "main": "Live-SYS-ShopSystem.js",
+  "scripts": {
+    "build": "node build.js",
+    "build:dev": "node build.js --dev",
+    "build:watch": "node build.js --dev --watch",
+    "test": "node build.js --dev --output test-output.js"
+  },
+  "keywords": [
+    "roll20",
+    "dnd",
+    "shop",
+    "system",
+    "rpg",
+    "tabletop"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "your-repo-url"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "buildConfig": {
+    "modules": {
+      "ShopConfig.js": {
+        "required": true,
+        "description": "Core configuration and constants"
+      },
+      "CurrencyManager.js": {
+        "required": true,
+        "description": "Currency operations and character sheet integration"
+      },
+      "MenuBuilder.js": {
+        "required": true,
+        "description": "Menu generation and templates"
+      },
+      "BasketManager.js": {
+        "required": false,
+        "description": "Shopping basket operations"
+      },
+      "ReceiptGenerator.js": {
+        "required": false,
+        "description": "Receipt generation for transactions"
+      },
+      "StockManager.js": {
+        "required": false,
+        "description": "Inventory and stock management"
+      },
+      "DatabaseManager.js": {
+        "required": false,
+        "description": "Database operations and persistence"
+      }
+    }
+  }
+}

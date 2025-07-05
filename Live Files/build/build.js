@@ -1,0 +1,347 @@
+/**
+ * Build Script for Live-SYS-ShopSystem
+ * 
+ * Concatenates all modules into a single Roll20-ready script
+ * Usage: node build.js [--dev] [--output filename]
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// Build configuration
+const CONFIG = {
+    sourceDir: '../modules',
+    sourceSrc: '../src',
+    outputDir: '../',
+    outputFile: 'Live-SYS-ShopSystem-Built.js',
+    originalFile: '../src/Live-SYS-ShopSystem.js',
+    
+    // Module load order (dependencies first)
+    moduleOrder: [
+        'ShopConfig.js',
+        'CurrencyManager.js', 
+        'MenuBuilder.js',
+        'BasketManager.js',
+        'ReceiptGenerator.js',
+        'StockManager.js',
+        'DatabaseManager.js'
+    ],
+    
+    // Modules that are required vs optional
+    requiredModules: [
+        'ShopConfig.js',
+        'CurrencyManager.js',
+        'MenuBuilder.js',
+        'BasketManager.js',
+        'ReceiptGenerator.js',
+        'StockManager.js'
+    ],
+    
+    optionalModules: [
+        'DatabaseManager.js'
+    ]
+};
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+const isDev = args.includes('--dev');
+const watchMode = args.includes('--watch');
+const outputIndex = args.indexOf('--output');
+const customOutput = outputIndex !== -1 ? args[outputIndex + 1] : null;
+
+/**
+ * Main build function
+ */
+function build() {
+    console.log('🚀 Building ShopSystem...');
+    console.log(`Mode: ${isDev ? 'Development' : 'Production'}`);
+    console.log(`Working directory: ${process.cwd()}`);
+    
+    try {
+        const modules = loadModules();
+        const builtScript = combineModules(modules);
+        const outputPath = customOutput || CONFIG.outputFile;
+        
+        writeOutput(builtScript, outputPath);
+        
+        console.log(`✅ Build complete: ${outputPath}`);
+        console.log(`📊 Stats: ${modules.length} modules, ${builtScript.split('\n').length} lines`);
+        
+    } catch (error) {
+        console.error(`❌ Build failed: ${error.message}`);
+        console.error(`Error details: ${error.stack}`);
+        process.exit(1);
+    }
+}
+
+/**
+ * Load all modules in correct order
+ */
+function loadModules() {
+    const modules = [];
+    const loadedModules = new Set();
+    
+    console.log('📦 Loading modules...');
+    console.log(`📁 Source directory: ${path.resolve(CONFIG.sourceDir)}`);
+    
+    // Load modules in specified order
+    for (const moduleFile of CONFIG.moduleOrder) {
+        const modulePath = path.join(CONFIG.sourceDir, moduleFile);
+        
+        if (fs.existsSync(modulePath)) {
+            console.log(`  ✅ ${moduleFile}`);
+            const content = fs.readFileSync(modulePath, 'utf-8');
+            modules.push({
+                name: moduleFile,
+                content: content,
+                required: CONFIG.requiredModules.includes(moduleFile)
+            });
+            loadedModules.add(moduleFile);
+        } else {
+            if (CONFIG.requiredModules.includes(moduleFile)) {
+                throw new Error(`Required module not found: ${moduleFile} at ${modulePath}`);
+            } else {
+                console.log(`  ⚠️  ${moduleFile} (optional, not found)`);
+            }
+        }
+    }
+    
+    // Load index.js last
+    const indexPath = path.join(CONFIG.sourceDir, 'index.js');
+    if (fs.existsSync(indexPath)) {
+        console.log(`  ✅ index.js`);
+        const content = fs.readFileSync(indexPath, 'utf-8');
+        modules.push({
+            name: 'index.js',
+            content: content,
+            required: true
+        });
+    } else {
+        throw new Error(`index.js not found at ${indexPath}`);
+    }
+    
+    return modules;
+}
+
+/**
+ * Combine modules into single script
+ */
+function combineModules(modules) {
+    const parts = [];
+    
+    // Add build header
+    parts.push(generateBuildHeader());
+    
+    // Add each module
+    modules.forEach((module, index) => {
+        parts.push(generateModuleHeader(module.name, index + 1, modules.length));
+        
+        // Clean module content (remove exports for Roll20)
+        let moduleContent = cleanModuleContent(module.content);
+        
+        parts.push(moduleContent);
+        parts.push(generateModuleFooter(module.name));
+    });
+    
+    // Add original file if in dev mode
+    if (isDev) {
+        parts.push(generateOriginalFileSection());
+    }
+    
+    // Add module initialization
+    parts.push(generateModuleInitialization());
+    
+    // Add build footer
+    parts.push(generateBuildFooter());
+    
+    return parts.join('\n\n');
+}
+
+/**
+ * Generate build header
+ */
+function generateBuildHeader() {
+    const timestamp = new Date().toISOString();
+    const mode = isDev ? 'Development' : 'Production';
+    
+    return `/**
+ * Live-SYS-ShopSystem - Built Version
+ * 
+ * Generated: ${timestamp}
+ * Mode: ${mode}
+ * Build System: v2.0
+ * 
+ * This file contains all ShopSystem modules combined for Roll20 deployment.
+ * Original files are located in the modules/ directory.
+ * 
+ * DO NOT EDIT THIS FILE DIRECTLY
+ * Make changes to the individual module files and rebuild.
+ */
+
+// ===================================================================
+// SHOPSYSTEM MODULES - START
+// ===================================================================`;
+}
+
+/**
+ * Generate module header
+ */
+function generateModuleHeader(moduleName, index, total) {
+    return `
+// ===================================================================
+// MODULE ${index}/${total}: ${moduleName}
+// ===================================================================`;
+}
+
+/**
+ * Generate module footer
+ */
+function generateModuleFooter(moduleName) {
+    return `// END MODULE: ${moduleName}`;
+}
+
+/**
+ * Clean module content for Roll20
+ */
+function cleanModuleContent(content) {
+    // Remove export statements for Roll20 compatibility
+    let cleaned = content.replace(/^if \(typeof module.*$/gm, '// Removed: Module export');
+    cleaned = cleaned.replace(/^} else if \(typeof exports.*$/gm, '// Removed: Exports');
+    cleaned = cleaned.replace(/^} else \{$/gm, '// Roll20 environment:');
+    cleaned = cleaned.replace(/module\.exports = .*;$/gm, '// Removed: Module export');
+    cleaned = cleaned.replace(/exports\..* = .*;$/gm, '// Removed: Export assignment');
+    
+    // Keep this.ModuleName assignments for Roll20
+    return cleaned;
+}
+
+/**
+ * Generate original file section (dev mode)
+ */
+function generateOriginalFileSection() {
+    if (!fs.existsSync(CONFIG.originalFile)) {
+        return '// Original file not found for development build';
+    }
+    
+    const originalContent = fs.readFileSync(CONFIG.originalFile, 'utf-8');
+    
+    return `
+// ===================================================================
+// ORIGINAL FILE (Development Mode)
+// ===================================================================
+// 
+// The original Live-SYS-ShopSystem.js file is included below for reference
+// and backward compatibility during development.
+// In production builds, only the modular components above are included.
+//
+
+${originalContent}
+
+// ===================================================================
+// END ORIGINAL FILE
+// ===================================================================`;
+}
+
+/**
+ * Generate module initialization code
+ */
+function generateModuleInitialization() {
+    return `
+// ===================================================================
+// MODULE INITIALIZATION
+// ===================================================================
+
+// Initialize all ShopSystem modules
+if (typeof ShopSystemModules !== 'undefined') {
+    // Auto-initialize modules when Roll20 is ready
+    on('ready', function() {
+        const initResults = ShopSystemModules.init();
+        
+        if (initResults.success) {
+            log('🎉 ShopSystem modular build loaded successfully!');
+            log(\`✅ Modules initialized: \${initResults.initialized.length}\`);
+        } else {
+            log('⚠️ ShopSystem loaded with module errors');
+            log(\`❌ Failed modules: \${initResults.failed.join(', ')}\`);
+        }
+        
+        // Log build information
+        log('📦 ShopSystem Build Info:');
+        log('   Version: Built with modular system v2.0');
+        log(\`   Modules: \${initResults.initialized.join(', ')}\`);
+        log('   Mode: ${isDev ? 'Development' : 'Production'}');
+    });
+} else {
+    log('❌ ShopSystemModules not found - check module loading');
+}`;
+}
+
+/**
+ * Generate build footer
+ */
+function generateBuildFooter() {
+    return `
+// ===================================================================
+// SHOPSYSTEM MODULES - END
+// ===================================================================
+
+// Build complete - ready for Roll20 deployment`;
+}
+
+/**
+ * Write output file
+ */
+function writeOutput(content, outputPath) {
+    const fullPath = path.join(CONFIG.outputDir, outputPath);
+    fs.writeFileSync(fullPath, content, 'utf-8');
+    
+    // Log file size
+    const stats = fs.statSync(fullPath);
+    const sizeKB = (stats.size / 1024).toFixed(2);
+    console.log(`📄 Output file: ${sizeKB} KB at ${fullPath}`);
+}
+
+/**
+ * Watch mode
+ */
+function setupWatchMode() {
+    console.log('👀 Watch mode enabled - watching for changes...');
+    
+    try {
+        const chokidar = require('chokidar');
+        const watcher = chokidar.watch([
+            CONFIG.sourceDir + '/**/*.js',
+            CONFIG.originalFile
+        ]);
+        
+        let buildTimeout;
+        
+        watcher.on('change', (path) => {
+            console.log(`📝 File changed: ${path}`);
+            
+            // Debounce builds
+            clearTimeout(buildTimeout);
+            buildTimeout = setTimeout(() => {
+                console.log('🔄 Rebuilding...');
+                build();
+            }, 500);
+        });
+        
+        watcher.on('error', error => {
+            console.error(`Watch error: ${error}`);
+        });
+        
+        // Initial build
+        build();
+    } catch (error) {
+        console.log('⚠️ Watch mode requires chokidar package. Running single build instead.');
+        build();
+    }
+}
+
+// Main execution
+if (watchMode) {
+    setupWatchMode();
+} else {
+    build();
+}
