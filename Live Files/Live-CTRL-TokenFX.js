@@ -461,8 +461,13 @@ const TokenFX = {
             let decoded = decodeURIComponent(raw || "");
             // First, replace common line-break tags with a newline character
             decoded = decoded.replace(/<\/p>|<br\s*\/?>/gi, '\n');
-            // Then, strip any remaining HTML tags
-            return decoded.replace(/<[^>]*>/g, "");
+            // Then, repeatedly strip any remaining HTML tags until no more matches are found
+            let previous;
+            do {
+                previous = decoded;
+                decoded = decoded.replace(/<[^>]*>/g, "");
+            } while (decoded !== previous);
+            return decoded;
         },
 
         hasTag(text, tag) {

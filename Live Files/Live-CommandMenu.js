@@ -31,7 +31,7 @@ const CommandMenu = {
             'TrapSystem': { version: 'v1.0.0' },
             'ShopSystem': { version: 'v1.0.0' },
             'LightControl': { version: 'v1.1.0' },
-            'TableTrigger': { version: 'v2.0.0' }, // update to new name
+            'TriggerControl': { version: 'v3.0.0' },
             'TrapMigrator': { version: 'v5.0.0' },
             'DataExporter': { version: 'v1.0.0' }
         },
