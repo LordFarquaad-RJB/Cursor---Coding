@@ -2809,7 +2809,7 @@ const TrapSystem = {
                 if (findObjs({ _type: "macro", name: content }).length > 0) {
                     return '#' + content;
                 }
-                return `"${content.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`; // Quote and escape
+                return `"${content.replace(/"/g, '\\"')}"`; // Quote and escape
             };
 
             let parts = [
@@ -4546,14 +4546,7 @@ const TrapSystem = {
             const sanitizeForMenuPreview = (str, maxLength = 35) => {
                 if (!str) return "(Not Set)";
                 let preview = str.replace(/&{template:[^}]+}/g, "").replace(/{{[^}]+}}/g, " [...] ");
-                
-                // Iteratively remove HTML tags to prevent injection from crafted inputs like <s<script>cript>
-                let prev;
-                do {
-                    prev = preview;
-                    preview = preview.replace(/<[^>]+>/g, "");
-                } while (preview !== prev);
-
+                preview = preview.replace(/<[^>]+>/g, ""); 
                 preview = preview.replace(/\[([^\]]*)\]\(([^)]*)\)/g, "$1"); 
                 preview = preview.trim();
                 if (preview.length > maxLength) preview = preview.substring(0, maxLength - 3) + "...";
