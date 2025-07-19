@@ -2596,9 +2596,9 @@ const TrapSystem = {
                         }
                     }
                     if (macroToExecute) {
-                        const result = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
-                        if (!result) {
-                            TrapSystem.utils.chat(`❌ Failed to execute macro: ${macroToExecute}`);
+                        const macroExists = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Macro '${macroToExecute}' not found or failed to execute.`);
                         }
                     } else {
                         TrapSystem.utils.chat(`❌ Invalid macro identifier: ${macroIdentifier}`);
@@ -2658,6 +2658,27 @@ const TrapSystem = {
             msg.push(`{{Movement Trigger=${data.movementTrigger ? 'On' : 'Off'}}}`);
             msg.push(`{{Auto Trigger=${data.autoTrigger ? 'On' : 'Off'}}}`);
             msg.push(`{{Position=${typeof data.position === 'object' ? `(${data.position.x},${data.position.y})` : data.position}}}`);
+            
+            // Auto-release information
+            if (data.autoReleaseMode && data.autoReleaseMode !== "off") {
+                const autoReleaseIcon = data.autoReleaseMode === "timer" ? "⏰" : 
+                                      data.autoReleaseMode === "player" ? "🗝️" : 
+                                      data.autoReleaseMode === "hybrid" ? "⚡" : "🔓";
+                const autoReleaseText = data.autoReleaseMode === "timer" ? `Timer (${data.autoReleaseTimer}s)` :
+                                      data.autoReleaseMode === "player" ? "Player Release" :
+                                      data.autoReleaseMode === "hybrid" ? `Hybrid (${data.autoReleaseTimer}s)` : data.autoReleaseMode;
+                
+                msg.push(`{{Auto Release=${autoReleaseIcon} ${autoReleaseText}}}`);
+                
+                if (data.autoReleaseMessage && data.autoReleaseMessage.trim() !== "") {
+                    const shortMessage = data.autoReleaseMessage.length > 30 ? 
+                        data.autoReleaseMessage.substring(0, 30) + "..." : 
+                        data.autoReleaseMessage;
+                    msg.push(`{{Release Message="${shortMessage}"}}`);
+                }
+            } else {
+                msg.push(`{{Auto Release=🔒 Disabled}}`);
+            }
 
 
             if(data.currentUses>0 && data.isArmed) { // Ensure armed for this message
@@ -3304,7 +3325,10 @@ const TrapSystem = {
                             // The macro runs, but no use is depleted yet. The GM will select a token
                             // and resolve the trap in the next step.
                             const manualTagMap = TrapSystem.utils.buildTagToIdMap(token, null);
-                            TrapSystem.utils.executeMacro(config.primaryMacro.macro, manualTagMap);
+                            const macroExists = TrapSystem.utils.executeMacro(config.primaryMacro.macro, manualTagMap);
+                            if (!macroExists) {
+                                TrapSystem.utils.chat(`⚠️ Warning: Primary macro '${config.primaryMacro.macro}' not found or failed to execute.`);
+                            }
                         }
                     } else {
                         TrapSystem.utils.chat("⚠️ This interaction trap has no Primary Macro defined. Proceeding to skill check menu instead.");
@@ -3346,7 +3370,10 @@ const TrapSystem = {
                 case "fail":
                     TrapSystem.utils.log(`Executing failure macro:${config.failureMacro}`, 'debug');
                     if (config.failureMacro) {
-                        TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                        const macroExists = TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                        }
                     }
                     break;
 
@@ -3408,11 +3435,15 @@ const TrapSystem = {
                 const trappedToken = getObj("graphic", triggeredTokenId);
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken);
                 const macroString = config.successMacro.trim();
-                TrapSystem.utils.executeMacro(macroString, tagToIdMap);
+                const macroExists = TrapSystem.utils.executeMacro(macroString, tagToIdMap);
                 
                 // Only whisper confirmation for commands/macros, not for templates/text.
                 if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
-                    TrapSystem.utils.whisper(playerid, `✅ Success macro '${config.successMacro}' executed.`);
+                    if (macroExists) {
+                        TrapSystem.utils.whisper(playerid, `✅ Success macro '${config.successMacro}' executed.`);
+                    } else {
+                        TrapSystem.utils.whisper(playerid, `⚠️ Warning: Success macro '${config.successMacro}' not found or failed to execute.`);
+                    }
                 }
             } else {
                 TrapSystem.utils.whisper(playerid, "⚠️ No success macro defined for this trap.");
@@ -3444,11 +3475,15 @@ const TrapSystem = {
                 const trappedToken = getObj("graphic", triggeredTokenId);
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken);
                 const macroString = config.failureMacro.trim();
-                TrapSystem.utils.executeMacro(macroString, tagToIdMap);
+                const macroExists = TrapSystem.utils.executeMacro(macroString, tagToIdMap);
             
                 // Only whisper confirmation for commands/macros, not for templates/text.
                 if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
-                    TrapSystem.utils.whisper(playerid, `❌ Failure macro '${config.failureMacro}' executed.`);
+                    if (macroExists) {
+                        TrapSystem.utils.whisper(playerid, `❌ Failure macro '${config.failureMacro}' executed.`);
+                    } else {
+                        TrapSystem.utils.whisper(playerid, `⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                    }
                 }
             } else {
                 TrapSystem.utils.whisper(playerid, "⚠️ No failure macro defined for this trap.");
@@ -3919,8 +3954,18 @@ const TrapSystem = {
                     sendChat("TrapSystem", menu);
                     
                     const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken, null);
-                    if (success && config.successMacro) TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
-                    if (!success && config.failureMacro) TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                    if (success && config.successMacro) {
+                        const macroExists = TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Success macro '${config.successMacro}' not found or failed to execute.`);
+                        }
+                    }
+                    if (!success && config.failureMacro) {
+                        const macroExists = TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                        }
+                    }
                     
                     // After either success or failure, resolve the trap state.
                     if (triggeredTokenId && TrapSystem.state.lockedTokens[triggeredTokenId]) {
@@ -3986,8 +4031,18 @@ const TrapSystem = {
                 sendChat("TrapSystem", menu);
 
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken, null);
-                if (success && config.successMacro) TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
-                if (!success && config.failureMacro) TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                if (success && config.successMacro) {
+                    const macroExists = TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
+                    if (!macroExists) {
+                        TrapSystem.utils.chat(`⚠️ Warning: Success macro '${config.successMacro}' not found or failed to execute.`);
+                    }
+                }
+                if (!success && config.failureMacro) {
+                    const macroExists = TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                    if (!macroExists) {
+                        TrapSystem.utils.chat(`⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                    }
+                }
                 
                 // After either success or failure, resolve the trap state.
                 if (triggeredTokenId && TrapSystem.state.lockedTokens[triggeredTokenId]) {
@@ -4593,12 +4648,13 @@ const TrapSystem = {
                 const character = charId ? getObj('character', charId) : null;
                 const charSheetName = character ? character.get('name') : charName;
                 
-                TrapSystem.utils.chat(`❌ **Passive Detection Failed**: Could not get Passive Perception for "${charSheetName}". This usually means:
-                    • **D&D 2024 sheets**: Enable "Use Experimental API" in Roll20 settings
-                    • **Other sheets**: Add a "passive_wisdom" attribute to the character
-                    • **Token bar fallback**: Set up a token bar with the PP value
+                TrapSystem.utils.chat(`⚠️ **Passive Detection Issue**: Could not get Passive Perception for "${charSheetName}". 
 
-                    Character: ${charSheetName} (ID: ${charId})`);
+                **Most Common Fix**: If using D&D 2024 sheets, enable "Use Experimental API" in Roll20 settings.
+
+                **Other Solutions**: Add "passive_wisdom" attribute to character, or set up a token bar with PP value.
+
+                Character: ${charSheetName} (ID: ${charId})`);
                 
                 return { finalPP: null, basePP: null, luckBonus: 0 };
             }
@@ -5483,16 +5539,35 @@ on("chat:message",(msg) => {
                     const successMacro = args[4];
                     const failureMacro = args[5];
 
-                    // Auto-release parameters (new, optional)
-                    const autoReleaseMessage = args[args.length - 1];
-                    const autoReleaseTimer = args[args.length - 2];
-                    const autoReleaseMode = args[args.length - 3];
-                    const autoTriggerEnabled = args[args.length - 4];
-                    const movement = args[args.length - 5];
-                    const movementTriggerEnabled = args[args.length - 6];
+                    // Auto-release parameters (new, optional) - only extract if they exist
+                    let autoReleaseMessage = "";
+                    let autoReleaseTimer = 30;
+                    let autoReleaseMode = "off";
+                    let autoTriggerEnabled = false;
+                    let movement = "intersection";
+                    let movementTriggerEnabled = true;
+                    let checkArgs = [];
                     
-                    // All args between the macros and the final six flags are for the checks.
-                    const checkArgs = args.slice(6, args.length - 6);
+                    // Check if we have the new auto-release parameters
+                    if (args.length >= 15) { // New format with auto-release params
+                        autoReleaseMessage = args[args.length - 1];
+                        autoReleaseTimer = args[args.length - 2];
+                        autoReleaseMode = args[args.length - 3];
+                        autoTriggerEnabled = args[args.length - 4];
+                        movement = args[args.length - 5];
+                        movementTriggerEnabled = args[args.length - 6];
+                        
+                        // All args between the macros and the final six flags are for the checks.
+                        checkArgs = args.slice(6, args.length - 6);
+                    } else { // Old format without auto-release params
+                        // Extract the old parameters from their expected positions
+                        autoTriggerEnabled = args[args.length - 1];
+                        movement = args[args.length - 2];
+                        movementTriggerEnabled = args[args.length - 3];
+                        
+                        // All args between the macros and the final three flags are for the checks.
+                        checkArgs = args.slice(6, args.length - 3);
+                    }
 
                     const checks = [];
                     let currentSkillParts = [];
