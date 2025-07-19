@@ -63,9 +63,11 @@ const LightControl = {
                 "<b>!door</b> (Native Door/Window objects)<br>" +
                 "• <code>!door [ID1] [ID2...] &lt;action&gt;</code><br>" +
                 "&nbsp;&nbsp;• Actions: <code>open</code>, <code>close</code>, <code>lock</code>, <code>unlock</code>, <code>reveal</code>, <code>set_secret_true</code><br>" +
+                "&nbsp;&nbsp;• Multiple Actions: <code>!door [ID1] [ID2...] &lt;action1&gt;;&lt;action2&gt;</code> (separate with semicolons)<br>" +
                 "&nbsp;&nbsp;• Area Ops: <code>!door area square &lt;grids&gt; &lt;action&gt;</code> or <code>!door area circle &lt;grids&gt; &lt;action&gt;</code><br>" +
                 "&nbsp;&nbsp;• Example (single): <code>!door -Mabc456 open</code><br>" +
-                "&nbsp;&nbsp;• Example (multiple): <code>!door -Mabc456 -Mdef789 close</code><br>" +
+                "&nbsp;&nbsp;• Example (multiple doors): <code>!door -Mabc456 -Mdef789 close</code><br>" +
+                "&nbsp;&nbsp;• Example (multiple actions): <code>!door -Mabc456 -Mdef789 close;lock</code><br>" +
                 "&nbsp;&nbsp;• Example (page): <code>!door all_on_page lock</code><br>" +
                 "&nbsp;&nbsp;• Example (area): <code>!door area square 5 open</code><br>" +
                 "&nbsp;&nbsp;• <b>Note:</b> Door operation messages can be disabled via <code>config.VERBOSE_DOOR_OPERATIONS</code>}}",
@@ -202,7 +204,7 @@ const LightControl = {
                     return;
                 }
 
-                const action = args[args.length - 1].toLowerCase();
+                const actionString = args[args.length - 1].toLowerCase();
                 const doorIDs = args.slice(1, args.length - 1);
                 
                 if (doorIDs.length === 0) {
@@ -210,30 +212,52 @@ const LightControl = {
                     return;
                 }
 
-                let successes = 0;
-                let failures = [];
+                // Split actions by semicolon to support multiple actions
+                const actions = actionString.split(';').map(a => a.trim()).filter(a => a.length > 0);
+                
+                if (actions.length === 0) {
+                    LightControl.utils.sendGmMessage("❌ Error: No valid actions provided. Use: `!door [ID1] [ID2]... <action>` or `!door [ID1] [ID2]... <action1>;<action2>`.");
+                    return;
+                }
 
+                let totalSuccesses = 0;
+                let totalFailures = [];
+
+                // Process each door with each action
                 doorIDs.forEach(doorID => {
                     let door = getObj("door", doorID) || getObj("window", doorID);
                     if (!door) {
-                        failures.push(`Object ${doorID} not found.`);
+                        totalFailures.push(`Object ${doorID} not found.`);
                         return;
                     }
                     
-                    let feedback = this.applyActionToDoorObject(door, action);
-
-                    if (feedback.startsWith("❌") || feedback.startsWith("⚠️")) {
-                        failures.push(feedback);
-                    } else {
-                        successes++;
+                    let doorSuccesses = 0;
+                    let doorFailures = [];
+                    
+                    // Apply each action to this door
+                    actions.forEach(action => {
+                        let feedback = this.applyActionToDoorObject(door, action);
+                        if (feedback.startsWith("❌") || feedback.startsWith("⚠️")) {
+                            doorFailures.push(feedback);
+                        } else {
+                            doorSuccesses++;
+                        }
+                    });
+                    
+                    if (doorSuccesses > 0) {
+                        totalSuccesses += doorSuccesses;
+                    }
+                    if (doorFailures.length > 0) {
+                        totalFailures.push(`Door ${doorID}: ${doorFailures.join(', ')}`);
                     }
                 });
 
-                if (successes > 0) {
-                    LightControl.utils.logDoorOperation(`🚪 Processed ${successes} door(s)/window(s). Action: \`${action}\`.`);
+                if (totalSuccesses > 0) {
+                    const actionText = actions.length > 1 ? `actions: \`${actions.join('; ')}\`` : `action: \`${actions[0]}\``;
+                    LightControl.utils.logDoorOperation(`🚪 Processed ${totalSuccesses} door operation(s). ${actionText}`);
                 }
-                if (failures.length > 0) {
-                    LightControl.utils.sendGmMessage(`❌ Some operations failed:<br>${failures.join('<br>')}`);
+                if (totalFailures.length > 0) {
+                    LightControl.utils.sendGmMessage(`❌ Some operations failed:<br>${totalFailures.join('<br>')}`);
                 }
             }
         },
