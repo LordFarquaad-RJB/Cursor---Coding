@@ -5553,7 +5553,7 @@ on("chat:message",(msg) => {
                     // New format ends with: movementTriggerEnabled movement autoTriggerEnabled autoReleaseMode autoReleaseTimer autoReleaseMessage
                     const lastArgs = args.slice(-6);
                     const hasNewFormatFlags = lastArgs.length >= 6 && 
-                        (lastArgs[3] === "off" || lastArgs[3] === "timer" || lastArgs[3] === "manual") && // autoReleaseMode
+                        (lastArgs[3] === "off" || lastArgs[3] === "timer" || lastArgs[3] === "player" || lastArgs[3] === "hybrid") && // autoReleaseMode
                         !isNaN(parseInt(lastArgs[4])) && // autoReleaseTimer (should be a number)
                         typeof lastArgs[5] === "string"; // autoReleaseMessage
                     
