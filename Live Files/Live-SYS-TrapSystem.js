@@ -344,8 +344,10 @@ const TrapSystem = {
                 if (processedText.trim().startsWith('&{')) {
                     sendChat('', processedText);
                 } else {
+                    // NOTE: We only split by newlines, not semicolons, to preserve Roll20 template syntax
+                    // Semicolons are valid within Roll20 templates and API commands
                     const remainingLines = processedText
-                        .split(/[\n;]/)  // Split by newlines OR semicolons
+                        .split(/\n/)  // Split by newlines ONLY
                         .map(line => line.trim())  // Trim whitespace
                         .filter(line => line.length > 0);  // Remove empty lines
                     const isApiCommand = line => line.trim().startsWith('!') || line.trim().startsWith('$');
@@ -4572,7 +4574,13 @@ const TrapSystem = {
 
             let basePP = null;
             let luckBonus = 0;
-            let apiWarningSent = false;
+            
+            // Use static property to prevent repeated API warnings
+            if (typeof TrapSystem.passive.apiWarningSent === 'undefined') {
+                TrapSystem.passive.apiWarningSent = false;
+                TrapSystem.utils.log(`Initialized apiWarningSent to false`, 'debug');
+            }
+            TrapSystem.utils.log(`apiWarningSent is currently: ${TrapSystem.passive.apiWarningSent}`, 'debug');
 
             // 1. Try Beacon API (getSheetItem) first
             if (typeof getSheetItem === 'function') {
@@ -4592,16 +4600,22 @@ const TrapSystem = {
                 } catch (err) {
                     TrapSystem.utils.log(`Error with getSheetItem for 'passive_wisdom' on char ${charId}: ${err}. Falling back.`, 'warn');
                     // Send warning about experimental API if this is the first failure
-                    if (!apiWarningSent) {
+                    TrapSystem.utils.log(`Checking apiWarningSent in catch block: ${TrapSystem.passive.apiWarningSent}`, 'debug');
+                    if (!TrapSystem.passive.apiWarningSent) {
+                        TrapSystem.utils.log(`Sending API warning message`, 'debug');
                         TrapSystem.utils.chat(`⚠️ **D&D 2024 Character Sheet Issue**: The passive detection system requires the Experimental API to access character sheet data. Please enable "Use Experimental API" in your Roll20 settings. This affects character: ${token.get('name') || 'Unknown'}`);
-                        apiWarningSent = true;
+                        TrapSystem.passive.apiWarningSent = true;
+                        TrapSystem.utils.log(`Set apiWarningSent to true`, 'debug');
                     }
                 }
             } else {
                 // getSheetItem function doesn't exist - likely not using experimental API
-                if (!apiWarningSent) {
+                TrapSystem.utils.log(`Checking apiWarningSent in else block: ${TrapSystem.passive.apiWarningSent}`, 'debug');
+                if (!TrapSystem.passive.apiWarningSent) {
+                    TrapSystem.utils.log(`Sending API warning message (getSheetItem not found)`, 'debug');
                     TrapSystem.utils.chat(`⚠️ **D&D 2024 Character Sheet Issue**: The passive detection system requires the Experimental API to access character sheet data. Please enable "Use Experimental API" in your Roll20 settings. This affects character: ${token.get('name') || 'Unknown'}`);
-                    apiWarningSent = true;
+                    TrapSystem.passive.apiWarningSent = true;
+                    TrapSystem.utils.log(`Set apiWarningSent to true`, 'debug');
                 }
             }
 
@@ -4643,18 +4657,23 @@ const TrapSystem = {
             if (basePP === null) {
                 TrapSystem.utils.log(`Could not determine Passive Perception for char ${charId} after all methods.`, 'warn');
                 
-                // Send a comprehensive warning to the GM about the issue
-                const charName = token.get('name') || 'Unknown Character';
-                const character = charId ? getObj('character', charId) : null;
-                const charSheetName = character ? character.get('name') : charName;
-                
-                TrapSystem.utils.chat(`⚠️ **Passive Detection Issue**: Could not get Passive Perception for "${charSheetName}". 
+                // Send a comprehensive warning to the GM about the issue (only once)
+                if (!TrapSystem.passive.apiWarningSent) {
+                    const charName = token.get('name') || 'Unknown Character';
+                    const character = charId ? getObj('character', charId) : null;
+                    const charSheetName = character ? character.get('name') : charName;
+                    
+                    TrapSystem.utils.chat(`⚠️ **Passive Detection Issue**: Could not get Passive Perception for "${charSheetName}". 
 
-                **Most Common Fix**: If using D&D 2024 sheets, enable "Use Experimental API" in Roll20 settings.
+                    **Most Common Fix**: If using D&D 2024 sheets, enable "Use Experimental API" in Roll20 settings.
 
-                **Other Solutions**: Add "passive_wisdom" attribute to character, or set up a token bar with PP value.
+                    **Other Solutions**: Add "passive_wisdom" attribute to character, or set up a token bar with PP value.
 
-                Character: ${charSheetName} (ID: ${charId})`);
+                    Character: ${charSheetName} (ID: ${charId})`);
+                    
+                    TrapSystem.passive.apiWarningSent = true;
+                    TrapSystem.utils.log(`Set apiWarningSent to true (from basePP null section)`, 'debug');
+                }
                 
                 return { finalPP: null, basePP: null, luckBonus: 0 };
             }
