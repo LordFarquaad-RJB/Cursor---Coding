@@ -5242,7 +5242,7 @@ on("change:graphic", async (obj, prev) => {
         // For any token that is not a trap itself, check if its movement triggers a trap.
         if ((obj.get("left") !== prev.left || obj.get("top") !== prev.top) && !TrapSystem.utils.isTrap(obj)) {
             await TrapSystem.passive.runPassiveChecksForToken(obj);
-            TrapSystem.detector.checkTrapTrigger(obj, prev.left, prev.top);
+            await TrapSystem.detector.checkTrapTrigger(obj, prev.left, prev.top);
         }
 
         // --- 3. Ignore Traps (Blue Marker) Status Change ---
@@ -5548,8 +5548,16 @@ on("chat:message",(msg) => {
                     let movementTriggerEnabled = true;
                     let checkArgs = [];
                     
-                    // Check if we have the new auto-release parameters
-                    if (args.length >= 15) { // New format with auto-release params
+                    // More robust format detection: Check if the last 3 args are the old format flags
+                    // Old format ends with: movementTriggerEnabled movement autoTriggerEnabled
+                    // New format ends with: movementTriggerEnabled movement autoTriggerEnabled autoReleaseMode autoReleaseTimer autoReleaseMessage
+                    const lastArgs = args.slice(-6);
+                    const hasNewFormatFlags = lastArgs.length >= 6 && 
+                        (lastArgs[3] === "off" || lastArgs[3] === "timer" || lastArgs[3] === "manual") && // autoReleaseMode
+                        !isNaN(parseInt(lastArgs[4])) && // autoReleaseTimer (should be a number)
+                        typeof lastArgs[5] === "string"; // autoReleaseMessage
+                    
+                    if (hasNewFormatFlags) { // New format with auto-release params
                         autoReleaseMessage = args[args.length - 1];
                         autoReleaseTimer = args[args.length - 2];
                         autoReleaseMode = args[args.length - 3];
