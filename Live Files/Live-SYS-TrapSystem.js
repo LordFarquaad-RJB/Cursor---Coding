@@ -165,7 +165,11 @@ const TrapSystem = {
 
         // State for hiding detection auras
         detectionAurasTemporarilyHidden: false,
-        hideAurasTimeout: null
+        hideAurasTimeout: null,
+        
+        // State for auto-release timers
+        autoReleaseTimers: {}, // { trapId: { tokenId: timeoutId } }
+        playerReleaseRequests: {} // { trapId: { tokenId: timestamp } }
     },
 
     //----------------------------------------------------------------------
@@ -340,7 +344,12 @@ const TrapSystem = {
                 if (processedText.trim().startsWith('&{')) {
                     sendChat('', processedText);
                 } else {
-                    const remainingLines = processedText.split('\n');
+                    // NOTE: We only split by newlines, not semicolons, to preserve Roll20 template syntax
+                    // Semicolons are valid within Roll20 templates and API commands
+                    const remainingLines = processedText
+                        .split(/\n/)  // Split by newlines ONLY
+                        .map(line => line.trim())  // Trim whitespace
+                        .filter(line => line.length > 0);  // Remove empty lines
                     const isApiCommand = line => line.trim().startsWith('!') || line.trim().startsWith('$');
                     const isTemplateCommand = line => line.trim().startsWith('&{');
                     
@@ -625,6 +634,10 @@ const TrapSystem = {
                 checks: [], movementTrigger: true, autoTrigger: false, position: "intersection",
                 passiveSpotDC: null, passiveMaxRange: null, passiveNoticePlayer: null,
                 passiveNoticeGM: null, ppTokenBarFallback: null,
+                // Auto-release settings
+                autoReleaseMode: "off", // "off", "timer", "player", "hybrid"
+                autoReleaseTimer: 30, // seconds
+                autoReleaseMessage: null, // Custom message when auto-releasing
                 rawTriggerBlock: null, // For debugging or preserving unparsed parts
                 rawDetectionBlock: null // For debugging
             };
@@ -693,6 +706,24 @@ const TrapSystem = {
                             break;
                         case "movementtrigger": trapData.movementTrigger = value.toLowerCase() === 'on'; break;
                         case "autotrigger": trapData.autoTrigger = value.toLowerCase() === 'on'; break;
+                        case "autorelease":
+                            const releaseMode = value.toLowerCase();
+                            if (["off", "timer", "player", "hybrid"].includes(releaseMode)) {
+                                trapData.autoReleaseMode = releaseMode;
+                            }
+                            break;
+                        case "autoreleasetimer":
+                            const timerVal = parseInt(value, 10);
+                            if (!isNaN(timerVal) && timerVal > 0) {
+                                trapData.autoReleaseTimer = timerVal;
+                            }
+                            break;
+                        case "autoreleasemessage":
+                            if (value.startsWith('"') && value.endsWith('"')) {
+                                value = value.substring(1, value.length - 1).replace(/\\"/g, '"');
+                            }
+                            trapData.autoReleaseMessage = value;
+                            break;
                         case "position":
                             const posLc = value.toLowerCase();
                             if (posLc === "center" || posLc === "intersection") {
@@ -1182,8 +1213,8 @@ const TrapSystem = {
                 '{{name=🎯 Trap System Help}}',
                 '{{About=The Trap System allows you to create and manage traps, skill checks, and interactions. Traps can be triggered by movement or manually.}}',
                 '{{Setup Traps=',
-                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})',
-                `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})`,
+                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})',
+                `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})`,
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
                 '{{Trap Control=',
                 '[🔄 Toggle](!trapsystem toggle) - Toggle selected trap on/off\n',
@@ -1206,7 +1237,9 @@ const TrapSystem = {
                 '• <b style="color:#f04747;">Placeholders:</b> Use <span style="color:#ffcb05">&lt;&trap&gt;</span> for the trap token and <span style="color:#ffcb05">&lt;&trapped&gt;</span> for the token that triggered it.<br>',
                 '• <b style="color:#f04747;">Token Selection:</b> Most commands require a trap token to be selected first.<br>',
                 '• <b style="color:#f04747;">Interaction Traps:</b> You can disable movement triggers on interaction traps to make them manually activated only.<br>',
-                '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps accept advantage/disadvantage.}}'
+                '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps accept advantage/disadvantage.<br>',
+                '• <b style="color:#f04747;">Auto-Release:</b> Set traps to automatically release tokens after a timer, allow player release requests, or both (hybrid mode).<br>',
+                '• <b style="color:#f04747;">Auto-Release Messages:</b> Messages with spaces MUST be wrapped in <span style="color:#ffcb05">"double quotes"</span> or use underscores/hyphens instead of spaces.}}'
             ].join(' ');
             sendChat(target, `/w GM ${helpMenu}`);
         },
@@ -1680,6 +1713,17 @@ const TrapSystem = {
             
             triggerSettings.push(`movementTrigger:[${trapData.movementTrigger === false ? 'off' : 'on'}]`); 
             triggerSettings.push(`autoTrigger:[${trapData.autoTrigger ? 'on' : 'off'}]`); 
+            
+            // Auto-release settings
+            if (trapData.autoReleaseMode && trapData.autoReleaseMode !== "off") {
+                triggerSettings.push(`autoRelease:[${trapData.autoReleaseMode}]`);
+            }
+            if (trapData.autoReleaseTimer && trapData.autoReleaseTimer !== 30) {
+                triggerSettings.push(`autoReleaseTimer:[${trapData.autoReleaseTimer}]`);
+            }
+            if (trapData.autoReleaseMessage) {
+                triggerSettings.push(`autoReleaseMessage:[${formatValue(trapData.autoReleaseMessage)}]`);
+            }
         
             let posStr = "intersection"; 
             if (typeof trapData.position === 'object' && trapData.position.x !== undefined && trapData.position.y !== undefined) {
@@ -2209,6 +2253,12 @@ const TrapSystem = {
                 relativeOffset: relativeOffset 
             };
             TrapSystem.utils.updateTokenLockState(triggeredToken, trapToken.id, true);
+            
+            // Start auto-release timer if enabled (only for timer or hybrid modes)
+            const autoReleaseData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+            if (autoReleaseData && ["timer", "hybrid"].includes(autoReleaseData.autoReleaseMode)) {
+                TrapSystem.triggers.startAutoReleaseTimer(trapToken, triggeredToken);
+            }
             let wasAutoTriggeredAndHasMacro = false;
 
             // --- Auto-trigger logic ---
@@ -2314,10 +2364,19 @@ const TrapSystem = {
             const tokenName = triggeredToken.get("name") || "Your Token";
             const warnImgUrl = TrapSystem.utils.getTokenImageURL(triggeredToken);
             const tokenImg = warnImgUrl === '👤' ? '👤' : `<img src="${warnImgUrl}" width="40" height="40">`;
+            
+            // Check if auto-release is enabled for this trap
+            const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+            let releaseButton = "";
+            if (trapData && ["player", "hybrid"].includes(trapData.autoReleaseMode)) {
+                releaseButton = `{{actions=[🗝️ Release Yourself](!trapsystem autorelease ${trapToken.id} ${triggeredToken.id})}}`;
+            }
+            
             const menu = `&{template:default} {{name=⚠️ ${tokenName} is Trapped!}}` +
                 `{{Token=${tokenImg}}}` +
                 `{{Warning=Your token has triggered a trap and is now locked.}}` +
-                `{{Instructions=Please wait for the GM to resolve the action (unlock, macro, or interaction).}}`;
+                `{{Instructions=Please wait for the GM to resolve the action (unlock, macro, or interaction).}}` +
+                releaseButton;
 
             // Whisper to each controlling player
             playerNames.forEach(pid => {
@@ -2410,6 +2469,115 @@ const TrapSystem = {
             });
         },
 
+        // Auto-release functions
+        startAutoReleaseTimer(trapToken, trappedToken) {
+            const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+            if (!trapData || trapData.autoReleaseMode === "off") return;
+
+            const trapId = trapToken.id;
+            const tokenId = trappedToken.id;
+
+            // Initialize timer tracking for this trap
+            if (!TrapSystem.state.autoReleaseTimers[trapId]) {
+                TrapSystem.state.autoReleaseTimers[trapId] = {};
+            }
+
+            // Clear any existing timer for this token
+            if (TrapSystem.state.autoReleaseTimers[trapId][tokenId]) {
+                clearTimeout(TrapSystem.state.autoReleaseTimers[trapId][tokenId]);
+            }
+
+            // Start new timer
+            const timerMs = (trapData.autoReleaseTimer || 30) * 1000;
+            const timeoutId = setTimeout(() => {
+                TrapSystem.triggers.executeAutoRelease(trapToken, trappedToken, "timer");
+            }, timerMs);
+
+            TrapSystem.state.autoReleaseTimers[trapId][tokenId] = timeoutId;
+
+            // Notify GM about timer start
+            const tokenName = trappedToken.get('name') || 'Unknown Token';
+            const trapName = trapToken.get('name') || 'Unknown Trap';
+            const timeStr = trapData.autoReleaseTimer >= 60 
+                ? `${Math.floor(trapData.autoReleaseTimer / 60)}m ${trapData.autoReleaseTimer % 60}s`
+                : `${trapData.autoReleaseTimer}s`;
+            
+            TrapSystem.utils.chat(`⏰ Auto-release timer started for ${tokenName} trapped by ${trapName} (${timeStr})`);
+        },
+
+        executeAutoRelease(trapToken, trappedToken, releaseType = "manual") {
+            const trapId = trapToken.id;
+            const tokenId = trappedToken.id;
+            const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+
+            // Clear timer if it exists
+            if (TrapSystem.state.autoReleaseTimers[trapId] && TrapSystem.state.autoReleaseTimers[trapId][tokenId]) {
+                clearTimeout(TrapSystem.state.autoReleaseTimers[trapId][tokenId]);
+                delete TrapSystem.state.autoReleaseTimers[trapId][tokenId];
+            }
+
+            // Use the proper allowMovement function to handle safety systems
+            TrapSystem.triggers.allowMovement(tokenId, true); // Suppress the default message
+
+            // Send custom release message
+            const tokenName = trappedToken.get('name') || 'Unknown Token';
+            const trapName = trapToken.get('name') || 'Unknown Trap';
+            
+            let releaseMessage = trapData.autoReleaseMessage || 
+                `${tokenName} has been released from ${trapName}!`;
+            
+            if (releaseType === "timer") {
+                releaseMessage = `⏰ ${releaseMessage} (Auto-release timer expired)`;
+            } else if (releaseType === "player") {
+                releaseMessage = `🎮 ${releaseMessage} (Player requested release)`;
+            }
+
+            TrapSystem.utils.chat(releaseMessage);
+            TrapSystem.utils.log(`Auto-release executed for ${tokenName} from ${trapName} (${releaseType})`, 'info');
+        },
+
+        handlePlayerReleaseRequest(trapToken, trappedToken, playerId) {
+            const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken, false);
+            if (!trapData) return false;
+
+            const trapId = trapToken.id;
+            const tokenId = trappedToken.id;
+
+            // Check if player release is allowed
+            if (!["player", "hybrid"].includes(trapData.autoReleaseMode)) {
+                TrapSystem.utils.whisper(playerId, "❌ Player release is not enabled for this trap.");
+                return false;
+            }
+
+            // Check if token is actually trapped
+            if (!TrapSystem.state.lockedTokens[tokenId]) {
+                TrapSystem.utils.whisper(playerId, "❌ This token is not currently trapped.");
+                return false;
+            }
+
+            // Check if player controls the token
+            const character = trappedToken.get('represents') ? getObj('character', trappedToken.get('represents')) : null;
+            if (character) {
+                const controllingPlayers = (character.get('controlledby') || "").split(',').map(p => p.trim());
+                if (!controllingPlayers.includes(playerId)) {
+                    TrapSystem.utils.whisper(playerId, "❌ You don't control this character.");
+                    return false;
+                }
+            } else {
+                // For tokens without characters, check direct control
+                const controllingPlayers = (trappedToken.get('controlledby') || "").split(',').map(p => p.trim());
+                if (!controllingPlayers.includes(playerId)) {
+                    TrapSystem.utils.whisper(playerId, "❌ You don't control this token.");
+                    return false;
+                }
+            }
+
+            // Execute the release
+            TrapSystem.triggers.executeAutoRelease(trapToken, trappedToken, "player");
+            TrapSystem.utils.whisper(playerId, "✅ Your character has been released from the trap!");
+            return true;
+        },
+
         markTriggered(tokenId, trapId, macroIdentifier) {
             // [UPDATED: Now also executes the macro immediately]
             if(TrapSystem.state.lockedTokens[tokenId]) {
@@ -2430,9 +2598,9 @@ const TrapSystem = {
                         }
                     }
                     if (macroToExecute) {
-                        const result = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
-                        if (!result) {
-                            TrapSystem.utils.chat(`❌ Failed to execute macro: ${macroToExecute}`);
+                        const macroExists = TrapSystem.utils.executeMacro(macroToExecute, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Macro '${macroToExecute}' not found or failed to execute.`);
                         }
                     } else {
                         TrapSystem.utils.chat(`❌ Invalid macro identifier: ${macroIdentifier}`);
@@ -2492,6 +2660,27 @@ const TrapSystem = {
             msg.push(`{{Movement Trigger=${data.movementTrigger ? 'On' : 'Off'}}}`);
             msg.push(`{{Auto Trigger=${data.autoTrigger ? 'On' : 'Off'}}}`);
             msg.push(`{{Position=${typeof data.position === 'object' ? `(${data.position.x},${data.position.y})` : data.position}}}`);
+            
+            // Auto-release information
+            if (data.autoReleaseMode && data.autoReleaseMode !== "off") {
+                const autoReleaseIcon = data.autoReleaseMode === "timer" ? "⏰" : 
+                                      data.autoReleaseMode === "player" ? "🗝️" : 
+                                      data.autoReleaseMode === "hybrid" ? "⚡" : "🔓";
+                const autoReleaseText = data.autoReleaseMode === "timer" ? `Timer (${data.autoReleaseTimer}s)` :
+                                      data.autoReleaseMode === "player" ? "Player Release" :
+                                      data.autoReleaseMode === "hybrid" ? `Hybrid (${data.autoReleaseTimer}s)` : data.autoReleaseMode;
+                
+                msg.push(`{{Auto Release=${autoReleaseIcon} ${autoReleaseText}}}`);
+                
+                if (data.autoReleaseMessage && data.autoReleaseMessage.trim() !== "") {
+                    const shortMessage = data.autoReleaseMessage.length > 30 ? 
+                        data.autoReleaseMessage.substring(0, 30) + "..." : 
+                        data.autoReleaseMessage;
+                    msg.push(`{{Release Message="${shortMessage}"}}`);
+                }
+            } else {
+                msg.push(`{{Auto Release=🔒 Disabled}}`);
+            }
 
 
             if(data.currentUses>0 && data.isArmed) { // Ensure armed for this message
@@ -2606,8 +2795,8 @@ const TrapSystem = {
         },
 
         // Setup standard trap
-        setupTrap(token, uses, mainMacro, optionalMacro2, optionalMacro3, movement, autoTrigger) {
-            TrapSystem.utils.log(`[setupTrap] Called. Token: ${token ? token.id : 'null'}, Uses: ${uses}, MainMacro: ${mainMacro}, Opt2: ${optionalMacro2}, Opt3: ${optionalMacro3}, Move: ${movement}, AutoT: ${autoTrigger}`, 'debug');
+        setupTrap(token, uses, mainMacro, optionalMacro2, optionalMacro3, movement, autoTrigger, autoReleaseMode = "off", autoReleaseTimer = 30, autoReleaseMessage = "") {
+            TrapSystem.utils.log(`[setupTrap] Called. Token: ${token ? token.id : 'null'}, Uses: ${uses}, MainMacro: ${mainMacro}, Opt2: ${optionalMacro2}, Opt3: ${optionalMacro3}, Move: ${movement}, AutoT: ${autoTrigger}, AutoRelease: ${autoReleaseMode}, Timer: ${autoReleaseTimer}, Message: ${autoReleaseMessage}`, 'debug');
             if (!token) {
                 TrapSystem.utils.chat('❌ Error: No token selected!');
                 return;
@@ -2707,6 +2896,17 @@ const TrapSystem = {
             parts.push(`movementTrigger:[on]`);
             parts.push(`autoTrigger:[${autoTrigger && (autoTrigger.toString().toLowerCase() === "true" || autoTrigger === true) ? 'on' : 'off'}]`);
 
+            // Auto-release settings
+            if (autoReleaseMode && autoReleaseMode !== "off") {
+                parts.push(`autoRelease:[${autoReleaseMode}]`);
+            }
+            if (autoReleaseTimer && autoReleaseTimer !== 30) {
+                parts.push(`autoReleaseTimer:[${autoReleaseTimer}]`);
+            }
+            if (autoReleaseMessage && autoReleaseMessage.trim() !== "") {
+                parts.push(`autoReleaseMessage:[${autoReleaseMessage.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}]`);
+            }
+
             const newTriggerBlock = `{!traptrigger ${parts.join(' ')}}`;
             const finalTrapConfigString = `${newTriggerBlock} ${existingDetectionBlock}`.trim();
             
@@ -2743,8 +2943,8 @@ const TrapSystem = {
         },
 
         // Setup an "interaction" trap
-        setupInteractionTrap(token, uses, primaryMacro, successMacro, failureMacro, check1Type, check1DC, check2Type, check2DC, movementTriggerEnabled = true, movement = 'intersection', autoTriggerEnabled = false) {
-            TrapSystem.utils.log(`[setupInteractionTrap] Called. Token: ${token ? token.id : 'null'}, Uses: ${uses}, PrimaryM: ${primaryMacro}, SuccessM: ${successMacro}, FailM: ${failureMacro}, AutoT: ${autoTriggerEnabled}`, 'debug');
+        setupInteractionTrap(token, uses, primaryMacro, successMacro, failureMacro, check1Type, check1DC, check2Type, check2DC, movementTriggerEnabled = true, movement = 'intersection', autoTriggerEnabled = false, autoReleaseMode = "off", autoReleaseTimer = 30, autoReleaseMessage = "") {
+            TrapSystem.utils.log(`[setupInteractionTrap] Called. Token: ${token ? token.id : 'null'}, Uses: ${uses}, PrimaryM: ${primaryMacro}, SuccessM: ${successMacro}, FailM: ${failureMacro}, AutoT: ${autoTriggerEnabled}, AutoRelease: ${autoReleaseMode}, Timer: ${autoReleaseTimer}, Message: ${autoReleaseMessage}`, 'debug');
             if (!token) {
                 TrapSystem.utils.chat('❌ Error: No token selected!');
                 return;
@@ -2858,6 +3058,17 @@ const TrapSystem = {
             const autoTriggerIsEnabled = (typeof autoTriggerEnabled === 'string' && autoTriggerEnabled.toLowerCase() === 'true') || autoTriggerEnabled === true;
             parts.push(`autoTrigger:[${autoTriggerIsEnabled ? 'on' : 'off'}]`);
             parts.push(`position:[${positionValue}]`);
+
+            // Auto-release settings
+            if (autoReleaseMode && autoReleaseMode !== "off") {
+                parts.push(`autoRelease:[${autoReleaseMode}]`);
+            }
+            if (autoReleaseTimer && autoReleaseTimer !== 30) {
+                parts.push(`autoReleaseTimer:[${autoReleaseTimer}]`);
+            }
+            if (autoReleaseMessage && autoReleaseMessage.trim() !== "") {
+                parts.push(`autoReleaseMessage:[${autoReleaseMessage.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}]`);
+            }
 
             const newTriggerBlock = `{!traptrigger ${parts.join(' ')}}`;
             const finalTrapConfigString = `${newTriggerBlock} ${existingDetectionBlock}`.trim();
@@ -3116,7 +3327,10 @@ const TrapSystem = {
                             // The macro runs, but no use is depleted yet. The GM will select a token
                             // and resolve the trap in the next step.
                             const manualTagMap = TrapSystem.utils.buildTagToIdMap(token, null);
-                            TrapSystem.utils.executeMacro(config.primaryMacro.macro, manualTagMap);
+                            const macroExists = TrapSystem.utils.executeMacro(config.primaryMacro.macro, manualTagMap);
+                            if (!macroExists) {
+                                TrapSystem.utils.chat(`⚠️ Warning: Primary macro '${config.primaryMacro.macro}' not found or failed to execute.`);
+                            }
                         }
                     } else {
                         TrapSystem.utils.chat("⚠️ This interaction trap has no Primary Macro defined. Proceeding to skill check menu instead.");
@@ -3158,7 +3372,10 @@ const TrapSystem = {
                 case "fail":
                     TrapSystem.utils.log(`Executing failure macro:${config.failureMacro}`, 'debug');
                     if (config.failureMacro) {
-                        TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                        const macroExists = TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                        }
                     }
                     break;
 
@@ -3220,11 +3437,15 @@ const TrapSystem = {
                 const trappedToken = getObj("graphic", triggeredTokenId);
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken);
                 const macroString = config.successMacro.trim();
-                TrapSystem.utils.executeMacro(macroString, tagToIdMap);
+                const macroExists = TrapSystem.utils.executeMacro(macroString, tagToIdMap);
                 
                 // Only whisper confirmation for commands/macros, not for templates/text.
                 if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
-                    TrapSystem.utils.whisper(playerid, `✅ Success macro '${config.successMacro}' executed.`);
+                    if (macroExists) {
+                        TrapSystem.utils.whisper(playerid, `✅ Success macro '${config.successMacro}' executed.`);
+                    } else {
+                        TrapSystem.utils.whisper(playerid, `⚠️ Warning: Success macro '${config.successMacro}' not found or failed to execute.`);
+                    }
                 }
             } else {
                 TrapSystem.utils.whisper(playerid, "⚠️ No success macro defined for this trap.");
@@ -3256,11 +3477,15 @@ const TrapSystem = {
                 const trappedToken = getObj("graphic", triggeredTokenId);
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken);
                 const macroString = config.failureMacro.trim();
-                TrapSystem.utils.executeMacro(macroString, tagToIdMap);
+                const macroExists = TrapSystem.utils.executeMacro(macroString, tagToIdMap);
             
                 // Only whisper confirmation for commands/macros, not for templates/text.
                 if (macroString.startsWith('!') || macroString.startsWith('$') || macroString.startsWith('#')) {
-                    TrapSystem.utils.whisper(playerid, `❌ Failure macro '${config.failureMacro}' executed.`);
+                    if (macroExists) {
+                        TrapSystem.utils.whisper(playerid, `❌ Failure macro '${config.failureMacro}' executed.`);
+                    } else {
+                        TrapSystem.utils.whisper(playerid, `⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                    }
                 }
             } else {
                 TrapSystem.utils.whisper(playerid, "⚠️ No failure macro defined for this trap.");
@@ -3731,8 +3956,18 @@ const TrapSystem = {
                     sendChat("TrapSystem", menu);
                     
                     const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken, null);
-                    if (success && config.successMacro) TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
-                    if (!success && config.failureMacro) TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                    if (success && config.successMacro) {
+                        const macroExists = TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Success macro '${config.successMacro}' not found or failed to execute.`);
+                        }
+                    }
+                    if (!success && config.failureMacro) {
+                        const macroExists = TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                        if (!macroExists) {
+                            TrapSystem.utils.chat(`⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                        }
+                    }
                     
                     // After either success or failure, resolve the trap state.
                     if (triggeredTokenId && TrapSystem.state.lockedTokens[triggeredTokenId]) {
@@ -3798,8 +4033,18 @@ const TrapSystem = {
                 sendChat("TrapSystem", menu);
 
                 const tagToIdMap = TrapSystem.utils.buildTagToIdMap(token, trappedToken, null);
-                if (success && config.successMacro) TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
-                if (!success && config.failureMacro) TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                if (success && config.successMacro) {
+                    const macroExists = TrapSystem.utils.executeMacro(config.successMacro, tagToIdMap);
+                    if (!macroExists) {
+                        TrapSystem.utils.chat(`⚠️ Warning: Success macro '${config.successMacro}' not found or failed to execute.`);
+                    }
+                }
+                if (!success && config.failureMacro) {
+                    const macroExists = TrapSystem.utils.executeMacro(config.failureMacro, tagToIdMap);
+                    if (!macroExists) {
+                        TrapSystem.utils.chat(`⚠️ Warning: Failure macro '${config.failureMacro}' not found or failed to execute.`);
+                    }
+                }
                 
                 // After either success or failure, resolve the trap state.
                 if (triggeredTokenId && TrapSystem.state.lockedTokens[triggeredTokenId]) {
@@ -4329,6 +4574,13 @@ const TrapSystem = {
 
             let basePP = null;
             let luckBonus = 0;
+            
+            // Use static property to prevent repeated API warnings
+            if (typeof TrapSystem.passive.apiWarningSent === 'undefined') {
+                TrapSystem.passive.apiWarningSent = false;
+                TrapSystem.utils.log(`Initialized apiWarningSent to false`, 'debug');
+            }
+            TrapSystem.utils.log(`apiWarningSent is currently: ${TrapSystem.passive.apiWarningSent}`, 'debug');
 
             // 1. Try Beacon API (getSheetItem) first
             if (typeof getSheetItem === 'function') {
@@ -4347,6 +4599,23 @@ const TrapSystem = {
                     }
                 } catch (err) {
                     TrapSystem.utils.log(`Error with getSheetItem for 'passive_wisdom' on char ${charId}: ${err}. Falling back.`, 'warn');
+                    // Send warning about experimental API if this is the first failure
+                    TrapSystem.utils.log(`Checking apiWarningSent in catch block: ${TrapSystem.passive.apiWarningSent}`, 'debug');
+                    if (!TrapSystem.passive.apiWarningSent) {
+                        TrapSystem.utils.log(`Sending API warning message`, 'debug');
+                        TrapSystem.utils.chat(`⚠️ **D&D 2024 Character Sheet Issue**: The passive detection system requires the Experimental API to access character sheet data. Please enable "Use Experimental API" in your Roll20 settings. This affects character: ${token.get('name') || 'Unknown'}`);
+                        TrapSystem.passive.apiWarningSent = true;
+                        TrapSystem.utils.log(`Set apiWarningSent to true`, 'debug');
+                    }
+                }
+            } else {
+                // getSheetItem function doesn't exist - likely not using experimental API
+                TrapSystem.utils.log(`Checking apiWarningSent in else block: ${TrapSystem.passive.apiWarningSent}`, 'debug');
+                if (!TrapSystem.passive.apiWarningSent) {
+                    TrapSystem.utils.log(`Sending API warning message (getSheetItem not found)`, 'debug');
+                    TrapSystem.utils.chat(`⚠️ **D&D 2024 Character Sheet Issue**: The passive detection system requires the Experimental API to access character sheet data. Please enable "Use Experimental API" in your Roll20 settings. This affects character: ${token.get('name') || 'Unknown'}`);
+                    TrapSystem.passive.apiWarningSent = true;
+                    TrapSystem.utils.log(`Set apiWarningSent to true`, 'debug');
                 }
             }
 
@@ -4387,6 +4656,25 @@ const TrapSystem = {
 
             if (basePP === null) {
                 TrapSystem.utils.log(`Could not determine Passive Perception for char ${charId} after all methods.`, 'warn');
+                
+                // Send a comprehensive warning to the GM about the issue (only once)
+                if (!TrapSystem.passive.apiWarningSent) {
+                    const charName = token.get('name') || 'Unknown Character';
+                    const character = charId ? getObj('character', charId) : null;
+                    const charSheetName = character ? character.get('name') : charName;
+                    
+                    TrapSystem.utils.chat(`⚠️ **Passive Detection Issue**: Could not get Passive Perception for "${charSheetName}". 
+
+                    **Most Common Fix**: If using D&D 2024 sheets, enable "Use Experimental API" in Roll20 settings.
+
+                    **Other Solutions**: Add "passive_wisdom" attribute to character, or set up a token bar with PP value.
+
+                    Character: ${charSheetName} (ID: ${charId})`);
+                    
+                    TrapSystem.passive.apiWarningSent = true;
+                    TrapSystem.utils.log(`Set apiWarningSent to true (from basePP null section)`, 'debug');
+                }
+                
                 return { finalPP: null, basePP: null, luckBonus: 0 };
             }
 
@@ -4973,7 +5261,7 @@ on("change:graphic", async (obj, prev) => {
         // For any token that is not a trap itself, check if its movement triggers a trap.
         if ((obj.get("left") !== prev.left || obj.get("top") !== prev.top) && !TrapSystem.utils.isTrap(obj)) {
             await TrapSystem.passive.runPassiveChecksForToken(obj);
-            TrapSystem.detector.checkTrapTrigger(obj, prev.left, prev.top);
+            await TrapSystem.detector.checkTrapTrigger(obj, prev.left, prev.top);
         }
 
         // --- 3. Ignore Traps (Blue Marker) Status Change ---
@@ -5246,8 +5534,11 @@ on("chat:message",(msg) => {
                     args[3], // mainMacro
                     args[4], // optional2
                     args[5], // optional3
-                        args[6], // movement
-                        args[7]  // autoTrigger
+                    args[6], // movement
+                    args[7], // autoTrigger
+                    args[8] || "off", // autoReleaseMode (default: off)
+                    args[9] || 30, // autoReleaseTimer (default: 30)
+                    args[10] || "" // autoReleaseMessage (default: empty)
                 );
                 } catch (e) {
                     TrapSystem.utils.log(`[API Handler] ERROR calling setupTrap: ${e.message} ${e.stack}`, 'error');
@@ -5258,7 +5549,7 @@ on("chat:message",(msg) => {
                 TrapSystem.utils.log(`[API Handler] Attempting to call setupInteractionTrap. Token ID: ${selectedToken ? selectedToken.id : 'null'}. Raw args for parsing: ${args.slice(2).join(', ')}`, 'debug');
                 try {
                      // Check a minimum length. The exact number is tricky due to multi-word skills. Let's say at least 8.
-                     if (args.length < 8) { // e.g., !trapsystem setupinteraction 1 macro macro macro None 10 true true
+                     if (args.length < 8) { // e.g., !trapsystem setupinteraction 1 macro macro macro None 10 true true intersection false off 30 ""
                         TrapSystem.utils.chat('❌ Error: Missing parameters for interaction trap setup.');
                         return;
                     }
@@ -5267,12 +5558,43 @@ on("chat:message",(msg) => {
                     const successMacro = args[4];
                     const failureMacro = args[5];
 
-                    const autoTriggerEnabled = args[args.length - 1];
-                    const movement = args[args.length - 2];
-                    const movementTriggerEnabled = args[args.length - 3];
+                    // Auto-release parameters (new, optional) - only extract if they exist
+                    let autoReleaseMessage = "";
+                    let autoReleaseTimer = 30;
+                    let autoReleaseMode = "off";
+                    let autoTriggerEnabled = false;
+                    let movement = "intersection";
+                    let movementTriggerEnabled = true;
+                    let checkArgs = [];
                     
-                    // All args between the macros and the final two flags are for the checks.
-                    const checkArgs = args.slice(6, args.length - 3);
+                    // More robust format detection: Check if the last 3 args are the old format flags
+                    // Old format ends with: movementTriggerEnabled movement autoTriggerEnabled
+                    // New format ends with: movementTriggerEnabled movement autoTriggerEnabled autoReleaseMode autoReleaseTimer autoReleaseMessage
+                    const lastArgs = args.slice(-6);
+                    const hasNewFormatFlags = lastArgs.length >= 6 && 
+                        (lastArgs[3] === "off" || lastArgs[3] === "timer" || lastArgs[3] === "player" || lastArgs[3] === "hybrid") && // autoReleaseMode
+                        !isNaN(parseInt(lastArgs[4])) && // autoReleaseTimer (should be a number)
+                        typeof lastArgs[5] === "string"; // autoReleaseMessage
+                    
+                    if (hasNewFormatFlags) { // New format with auto-release params
+                        autoReleaseMessage = args[args.length - 1];
+                        autoReleaseTimer = args[args.length - 2];
+                        autoReleaseMode = args[args.length - 3];
+                        autoTriggerEnabled = args[args.length - 4];
+                        movement = args[args.length - 5];
+                        movementTriggerEnabled = args[args.length - 6];
+                        
+                        // All args between the macros and the final six flags are for the checks.
+                        checkArgs = args.slice(6, args.length - 6);
+                    } else { // Old format without auto-release params
+                        // Extract the old parameters from their expected positions
+                        autoTriggerEnabled = args[args.length - 1];
+                        movement = args[args.length - 2];
+                        movementTriggerEnabled = args[args.length - 3];
+                        
+                        // All args between the macros and the final three flags are for the checks.
+                        checkArgs = args.slice(6, args.length - 3);
+                    }
 
                     const checks = [];
                     let currentSkillParts = [];
@@ -5299,7 +5621,7 @@ on("chat:message",(msg) => {
                     const check2Type = checks[1] ? checks[1].type : "None";
                     const check2DC = checks[1] ? checks[1].dc : "10";
 
-                    TrapSystem.utils.log(`[API Handler] Parsed for setupInteractionTrap - Uses: ${uses}, PrimaryM: ${primaryMacro}, SuccessM: ${successMacro}, FailM: ${failureMacro}, C1Type: '${check1Type}', C1DC: ${check1DC}, C2Type: '${check2Type}', C2DC: ${check2DC}, MoveEnabled: ${movementTriggerEnabled}, AutoTrigger: ${autoTriggerEnabled}`, 'debug');
+                    TrapSystem.utils.log(`[API Handler] Parsed for setupInteractionTrap - Uses: ${uses}, PrimaryM: ${primaryMacro}, SuccessM: ${successMacro}, FailM: ${failureMacro}, C1Type: '${check1Type}', C1DC: ${check1DC}, C2Type: '${check2Type}', C2DC: ${check2DC}, MoveEnabled: ${movementTriggerEnabled}, AutoTrigger: ${autoTriggerEnabled}, AutoRelease: ${autoReleaseMode}, Timer: ${autoReleaseTimer}, Message: ${autoReleaseMessage}`, 'debug');
 
                     TrapSystem.triggers.setupInteractionTrap(
                         selectedToken,uses,
@@ -5307,7 +5629,10 @@ on("chat:message",(msg) => {
                         check1Type, check1DC,
                         check2Type, check2DC,
                         movementTriggerEnabled,
-                        movement,autoTriggerEnabled
+                        movement,autoTriggerEnabled,
+                        autoReleaseMode || "off", // autoReleaseMode (default: off)
+                        autoReleaseTimer || 30,   // autoReleaseTimer (default: 30)
+                        autoReleaseMessage || ""  // autoReleaseMessage (default: empty)
                     );
                 } catch (e) {
                     TrapSystem.utils.log(`[API Handler] ERROR in setupInteractionTrap case: ${e.message} ${e.stack}`, 'error');
@@ -5695,6 +6020,29 @@ on("chat:message",(msg) => {
                 }
                 // toggleTrap will handle setting uses to 1 if it's depleted.
                 TrapSystem.triggers.toggleTrap(tk);
+                break;
+            }
+            case "autorelease": {
+                // Handle player release requests: !trapsystem autorelease [trapId] [tokenId]
+                if (args.length < 4) {
+                    TrapSystem.utils.chat("❌ Missing parameters for autorelease. Expected: !trapsystem autorelease [trapId] [tokenId]");
+                    return;
+                }
+                const trapId = args[2];
+                const tokenId = args[3];
+                const trapToken = getObj("graphic", trapId);
+                const trappedToken = getObj("graphic", tokenId);
+                
+                if (!trapToken || !trappedToken) {
+                    TrapSystem.utils.chat("❌ Invalid trap or token ID for autorelease.");
+                    return;
+                }
+                
+                const success = TrapSystem.triggers.handlePlayerReleaseRequest(trapToken, trappedToken, msg.playerid);
+                if (!success) {
+                    // Error message already sent by handlePlayerReleaseRequest
+                    return;
+                }
                 break;
             }
             default:

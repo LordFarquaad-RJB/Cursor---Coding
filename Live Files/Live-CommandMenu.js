@@ -263,8 +263,8 @@ const CommandMenu = {
                 case CommandMenu.config.MENU_SECTIONS.TRAP:
                 const skillListQuery = CommandMenu.config.trapSystemSkillList.join('|');
                     return "{{Trap Controls=[" +
-                           "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})" +
-                           `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true})` +
+                           "🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})" +
+                           `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})` +
                            "[🛠️ Setup Detection](!trapsystem passivemenu)" +
                            "[👁️ Set Detection Aura](!trapsystem setpassive showaura &#64;{selected|token_id} ?{Aura State?|On,true|Off,false})" +
                            "[🙉 Hide Detections](!trapsystem hidedetection ?{Minutes - 0 for indefinitely|0})" +
@@ -484,7 +484,13 @@ const CommandMenu = {
                 "&nbsp;&nbsp;- Up to 2 skill checks with DCs<br>" +
                 "&nbsp;&nbsp;- Supports flat rolls (no modifiers)<br>" +
                 "&nbsp;&nbsp;- Players can explain actions<br>" +
-                "**- State Management (New!):**<br>" +
+                "**- Auto-Release System (New!):**<br>" +
+                "&nbsp;&nbsp;- Timer Release: Automatically release tokens after a set time<br>" +
+                "&nbsp;&nbsp;- Player Release: Allow players to request release via button<br>" +
+                "&nbsp;&nbsp;- Hybrid Release: Both timer and player release options<br>" +
+                "&nbsp;&nbsp;- Custom Messages: Set personalized release notifications<br>" +
+                "&nbsp;&nbsp;- Safe Movement: Prevents re-triggering after auto-release<br>" +
+                "**- State Management:**<br>" +
                 "&nbsp;&nbsp;- Export State & Macros: Saves current token/object states and macro actions.<br>" +
                 "&nbsp;&nbsp;- Reset Token/Object States: Restores saved physical states of tokens and objects.<br>" +
                 "&nbsp;&nbsp;- Reset Macro Actions: Restores macro actions to their saved versions.<br>" +
