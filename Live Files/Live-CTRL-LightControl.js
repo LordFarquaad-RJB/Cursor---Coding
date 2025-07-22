@@ -9,7 +9,8 @@ const LightControl = {
         DEFAULT_GRID_SIZE: 70,
         VALID_LAYERS: ["walls", "gmlayer", "map", "objects"],
         VERBOSE_WALL_MOVEMENTS: false,  // Set to false to reduce chat clutter from wall movement traps
-        VERBOSE_DOOR_OPERATIONS: false  // Set to false to reduce chat clutter from door operations
+        VERBOSE_DOOR_OPERATIONS: false,  // Set to false to reduce chat clutter from door operations
+        DEBUG_MODE: false  // Set to true to enable detailed debugging information
     },
 
     // Utility functions
@@ -38,11 +39,75 @@ const LightControl = {
             if (LightControl.config.VERBOSE_DOOR_OPERATIONS) {
                 LightControl.utils.sendGmMessage(message);
             }
+        },
+        debug(message) {
+            if (LightControl.config.DEBUG_MODE) {
+                LightControl.utils.log(`[DEBUG] ${message}`, 'info');
+            }
         }
     },
 
     // Help Command
     help: {
+        listDoorsOnPage(playerid) {
+            if (!LightControl.utils.isGM(playerid)) {
+                let player_obj = getObj('player', playerid);
+                let display_name = "";
+                if(player_obj){
+                    display_name = player_obj.get('_displayname');
+                }
+                sendChat("LightControl", "/w " + display_name + " Permission error: This command is GM only.", null, {noarchive: true});
+                return;
+            }
+            
+            const currentPageId = Campaign().get("playerpageid");
+            const currentPage = getObj("page", currentPageId);
+            const pageName = currentPage ? currentPage.get("name") : "Unknown";
+            
+            const doors = findObjs({ _pageid: currentPageId, _type: "door" });
+            const windows = findObjs({ _pageid: currentPageId, _type: "window" });
+            
+            if (doors.length === 0 && windows.length === 0) {
+                const noObjectsMsg = [
+                    "&{template:default} {{name=🚪 Door & Window List}}",
+                    `{{page=${pageName}}}`,
+                    "{{status=No doors or windows found on this page.}}"
+                ].join(" ");
+                LightControl.utils.sendGmMessage(noObjectsMsg);
+                return;
+            }
+            
+            let doorsList = "";
+            let windowsList = "";
+            
+            if (doors.length > 0) {
+                doors.forEach(door => {
+                    const isOpen = door.get("isOpen") ? "✅ Open" : "❌ Closed";
+                    const isLocked = door.get("isLocked") ? "🔒 Locked" : "🔓 Unlocked";
+                    const isSecret = door.get("isSecret") ? "🤫 Secret" : "👀 Visible";
+                    doorsList += `<br>• <code>${door.id}</code> - ${isOpen} | ${isLocked} | ${isSecret}`;
+                });
+            }
+            
+            if (windows.length > 0) {
+                windows.forEach(window => {
+                    const isOpen = window.get("isOpen") ? "✅ Open" : "❌ Closed";
+                    const isLocked = window.get("isLocked") ? "🔒 Locked" : "🔓 Unlocked";
+                    windowsList += `<br>• <code>${window.id}</code> - ${isOpen} | ${isLocked}`;
+                });
+            }
+            
+            const templateMsg = [
+                "&{template:default} {{name=🚪 Door & Window List}}",
+                `{{page=${pageName}}}`,
+                `{{total_objects=${doors.length + windows.length} total}}`,
+                `{{doors=${doors.length > 0 ? `**Doors (${doors.length}):**${doorsList}` : "No doors found."}}}`,
+                `{{windows=${windows.length > 0 ? `**Windows (${windows.length}):**${windowsList}` : "No windows found."}}}`
+            ].join(" ");
+            
+            LightControl.utils.sendGmMessage(templateMsg);
+        },
+        
         showHelp(playerid) {
             if (!LightControl.utils.isGM(playerid)) {
                 let player_obj = getObj('player', playerid);
@@ -77,7 +142,10 @@ const LightControl = {
                 "&nbsp;&nbsp;• Example: <code>!lc toggledarkness square 5</code><br>" +
                 "&nbsp;&nbsp;• Example: <code>!lc toggledarkness circle 3 --id room_torch</code>}}",
                 "{{General=<b>Help:</b> <code>!lc help</code> or <code>!lightcontrol help</code> = Shows this help message.<br>" +
-                "<b>Configuration:</b> Set <code>config.VERBOSE_WALL_MOVEMENTS</code> and <code>config.VERBOSE_DOOR_OPERATIONS</code> to <code>false</code> to reduce chat clutter from traps and automated operations.<br>}}"
+                "<b>Debug:</b> <code>!lc listdoors</code> = Lists all doors and windows on the current page with their IDs and states.<br>" +
+                "<b>Configuration:</b> Set <code>config.VERBOSE_WALL_MOVEMENTS</code> and <code>config.VERBOSE_DOOR_OPERATIONS</code> to <code>false</code> to reduce chat clutter from traps and automated operations.<br>" +
+                "<b>Debug Mode:</b> Set <code>config.DEBUG_MODE</code> to <code>true</code> to enable detailed debugging information.<br>" +
+                "<b>Input Handling:</b> Commands automatically handle extra spaces and empty arguments for better user experience.<br>}}"
             ].join(" ");
             LightControl.utils.sendGmMessage(helpMsg);
         }
@@ -86,15 +154,18 @@ const LightControl = {
     // Wall Management
     wall: {
         processWallCommand(args) {
-            if (args.length < 3) {
+            // Sanitize arguments - remove empty strings and trim whitespace
+            const sanitizedArgs = args.filter(arg => arg && arg.trim() !== '').map(arg => arg.trim());
+            
+            if (sanitizedArgs.length < 3) {
                 sendChat("API", "/w gm ❌ Error: Missing parameters! Use: **!wall [ID] moveLeft/moveRight/moveUp/moveDown/hide/reveal/layer [Grid Size] [Grids]**");
                 return;
             }
 
-            let wallID = args[1];
-            let action = args[2].toLowerCase();
-            let gridSize = args[3] ? parseInt(args[3], 10) : LightControl.config.DEFAULT_GRID_SIZE;
-            let gridsToMove = args[4] ? parseInt(args[4], 10) : 1;
+            let wallID = sanitizedArgs[1];
+            let action = sanitizedArgs[2].toLowerCase();
+            let gridSize = sanitizedArgs[3] ? parseInt(sanitizedArgs[3], 10) : LightControl.config.DEFAULT_GRID_SIZE;
+            let gridsToMove = sanitizedArgs[4] ? parseInt(sanitizedArgs[4], 10) : 1;
             let totalMove = gridSize * gridsToMove;
 
             if (!wallID) {
@@ -145,7 +216,7 @@ const LightControl = {
                     break;
 
                 case "layer": {
-                    let newLayer = args[3]?.toLowerCase();
+                    let newLayer = sanitizedArgs[3]?.toLowerCase();
                     if (!LightControl.config.VALID_LAYERS.includes(newLayer)) {
                         LightControl.utils.sendGmMessage(`❌ Invalid layer! Use: ${LightControl.config.VALID_LAYERS.join(", ")}`);
                         return;
@@ -166,18 +237,24 @@ const LightControl = {
     // Door/Window Management
     door: {
         processDoorCommand(args) {
-            if (args.length < 2) { // Min length for !door <target>
+            // Sanitize arguments - remove empty strings and trim whitespace
+            const sanitizedArgs = args.filter(arg => arg && arg.trim() !== '').map(arg => arg.trim());
+            
+            if (sanitizedArgs.length < 2) { // Min length for !door <target>
                 LightControl.utils.sendGmMessage("❌ Error: Missing parameters for !door command. Try `!lc help`.");
                 return;
             }
 
-            const originalTarget = args[1];
+            const originalTarget = sanitizedArgs[1];
             const keyword = originalTarget.toLowerCase();
             const playerid = args.whoisplayerid; // Passed from main handler
+            
+            LightControl.utils.debug(`Original args: [${args.join(', ')}]`);
+            LightControl.utils.debug(`Sanitized args: [${sanitizedArgs.join(', ')}]`);
 
             if (keyword === "all_on_page") {
-                if (args.length < 3) { LightControl.utils.sendGmMessage("❌ Error: Missing action for `all_on_page`. Use: `!door all_on_page <action>`."); return; }
-                const action = args[2].toLowerCase();
+                if (sanitizedArgs.length < 3) { LightControl.utils.sendGmMessage("❌ Error: Missing action for `all_on_page`. Use: `!door all_on_page <action>`."); return; }
+                const action = sanitizedArgs[2].toLowerCase();
                 if (!LightControl.utils.isGM(playerid)) {
                     let player_obj = getObj('player', playerid);
                     let display_name = "";
@@ -188,24 +265,26 @@ const LightControl = {
                 this.processAllDoorsOnPage(action, Campaign().get("playerpageid"));
             }
             else if (keyword === "area") {
-                if (args.length < 5) { // !door area shape dimension action
+                if (sanitizedArgs.length < 5) { // !door area shape dimension action
                      LightControl.utils.sendGmMessage("❌ Error: Missing parameters for `area` operation. Use: `!door area <shape> <dimension> <action>`."); return; 
                 }
-                const shape = args[2].toLowerCase();
-                const dimension = parseInt(args[3]);
-                const action = args[4].toLowerCase();
+                const shape = sanitizedArgs[2].toLowerCase();
+                const dimension = parseInt(sanitizedArgs[3]);
+                const action = sanitizedArgs[4].toLowerCase();
                 const selectedGraphics = (args.selected || []).map(s => getObj("graphic", s._id)).filter(g => g && g.get("_subtype") === "token");
                 
                 this.processAreaDoorCommand(shape, dimension, action, selectedGraphics, playerid);
             }
             else { // Assumed to be one or more specific door IDs
-                if (args.length < 3) {
+                if (sanitizedArgs.length < 3) {
                     LightControl.utils.sendGmMessage("❌ Error: Missing action or door ID(s). Use: `!door [ID1] [ID2]... <action>`.");
                     return;
                 }
 
-                const actionString = args[args.length - 1].toLowerCase();
-                const doorIDs = args.slice(1, args.length - 1);
+                const actionString = sanitizedArgs[sanitizedArgs.length - 1].toLowerCase();
+                const doorIDs = sanitizedArgs.slice(1, sanitizedArgs.length - 1);
+                
+                LightControl.utils.debug(`Processing door command - Door IDs: ${doorIDs.join(', ')}, Actions: ${actionString}`);
                 
                 if (doorIDs.length === 0) {
                     LightControl.utils.sendGmMessage("❌ Error: No door ID(s) provided. Use: `!door [ID1] [ID2]... <action>`.");
@@ -225,11 +304,34 @@ const LightControl = {
 
                 // Process each door with each action
                 doorIDs.forEach(doorID => {
+                    LightControl.utils.debug(`Looking for door/window with ID: ${doorID}`);
                     let door = getObj("door", doorID) || getObj("window", doorID);
                     if (!door) {
-                        totalFailures.push(`Object ${doorID} not found.`);
+                        LightControl.utils.debug(`Door/window ${doorID} not found on current page`);
+                        // Enhanced error message with more context
+                        const currentPageId = Campaign().get("playerpageid");
+                        const currentPage = getObj("page", currentPageId);
+                        const pageName = currentPage ? currentPage.get("name") : "Unknown";
+                        
+                        // Check if object exists but on different page
+                        const allDoors = findObjs({ _type: "door" });
+                        const allWindows = findObjs({ _type: "window" });
+                        const allObjects = allDoors.concat(allWindows);
+                        const objectOnOtherPage = allObjects.find(obj => obj.id === doorID);
+                        
+                        if (objectOnOtherPage) {
+                            const objectPage = getObj("page", objectOnOtherPage.get("_pageid"));
+                            const objectPageName = objectPage ? objectPage.get("name") : "Unknown";
+                            LightControl.utils.debug(`Door/window ${doorID} found on different page: ${objectPageName}`);
+                            totalFailures.push(`Object ${doorID} not found on current page (${pageName}). It exists on page: ${objectPageName}`);
+                        } else {
+                            LightControl.utils.debug(`Door/window ${doorID} not found anywhere in campaign`);
+                            totalFailures.push(`Object ${doorID} not found anywhere in the campaign. It may have been deleted or the ID is incorrect.`);
+                        }
                         return;
                     }
+                    
+                    LightControl.utils.debug(`Found ${door.get('_type')} ${doorID} on page ${door.get('_pageid')}`);
                     
                     let doorSuccesses = 0;
                     let doorFailures = [];
@@ -266,7 +368,24 @@ const LightControl = {
              // GM check can be added here if certain actions on single doors are GM-only, but typically not needed.
             let door = getObj("door", doorID) || getObj("window", doorID);
             if (!door) {
-                LightControl.utils.sendGmMessage(`❌ Error: Door or Window ${doorID} not found.`);
+                // Enhanced error message with more context
+                const currentPageId = Campaign().get("playerpageid");
+                const currentPage = getObj("page", currentPageId);
+                const pageName = currentPage ? currentPage.get("name") : "Unknown";
+                
+                // Check if object exists but on different page
+                const allDoors = findObjs({ _type: "door" });
+                const allWindows = findObjs({ _type: "window" });
+                const allObjects = allDoors.concat(allWindows);
+                const objectOnOtherPage = allObjects.find(obj => obj.id === doorID);
+                
+                if (objectOnOtherPage) {
+                    const objectPage = getObj("page", objectOnOtherPage.get("_pageid"));
+                    const objectPageName = objectPage ? objectPage.get("name") : "Unknown";
+                    LightControl.utils.sendGmMessage(`❌ Error: Door or Window ${doorID} not found on current page (${pageName}). It exists on page: ${objectPageName}`);
+                } else {
+                    LightControl.utils.sendGmMessage(`❌ Error: Door or Window ${doorID} not found anywhere in the campaign. It may have been deleted or the ID is incorrect.`);
+                }
                 return;
             }
             let feedback = this.applyActionToDoorObject(door, action);
@@ -580,9 +699,9 @@ const LightControl = {
 
 // Initialize on ready
 on("ready", function() {
-    LightControl.utils.log("✅ LightControl System v1.1.0 Ready!");
+    LightControl.utils.log("✅ LightControl System v1.3.0 Ready!");
     if (typeof CommandMenu !== 'undefined' && CommandMenu.utils && CommandMenu.utils.addInitStatus) {
-        CommandMenu.utils.addInitStatus('LightControl', 'success', 'v1.1.0', 'success');
+        CommandMenu.utils.addInitStatus('LightControl', 'success', 'v1.3.0', 'success');
     }
 });
 
@@ -608,6 +727,9 @@ on("chat:message", function(msg) {
         const subCommand = args[1] ? args[1].toLowerCase() : null;
         if (subCommand === "help") {
             LightControl.help.showHelp(msg.playerid);
+        }
+        else if (subCommand === "listdoors") {
+            LightControl.help.listDoorsOnPage(msg.playerid);
         }
         else if (subCommand === "toggledarkness") {
             const selectedGraphics = (msg.selected || []).map(s => getObj("graphic", s._id)).filter(g => g && g.get("_subtype") === "token");
