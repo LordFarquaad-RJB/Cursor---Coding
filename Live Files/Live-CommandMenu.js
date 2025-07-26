@@ -283,6 +283,8 @@ const CommandMenu = {
                            "[📝 Reset Macro Actions](!trapsystem resetmacros)" +
                            "[💥 Reset - States & Macros](!trapsystem fullreset)" +
                            "[🧹 Reset Detection](!trapsystem resetdetection)" +
+                           "[📊 Bulk Enable Token Bar](!trapsystem bulkenabletokenbar ?{Token Bar|bar1|bar2|bar3})" +
+                           "[🚫 Bulk Disable Token Bar](!trapsystem bulkdisabletokenbar)" +
                            "[❓ Help](!trapsystem help)" +
                            "}}";
 
@@ -494,7 +496,11 @@ const CommandMenu = {
                 "&nbsp;&nbsp;- Export State & Macros: Saves current token/object states and macro actions.<br>" +
                 "&nbsp;&nbsp;- Reset Token/Object States: Restores saved physical states of tokens and objects.<br>" +
                 "&nbsp;&nbsp;- Reset Macro Actions: Restores macro actions to their saved versions.<br>" +
-                "&nbsp;&nbsp;- Full Reset: Performs both state and macro action resets." +
+                "&nbsp;&nbsp;- Full Reset: Performs both state and macro action resets.<br>" +
+                "**- Bulk Token Bar Management (New!):**<br>" +
+                "&nbsp;&nbsp;- Bulk Enable Token Bar: Quickly enable token bar fallback for all traps (useful when experimental API is unavailable)<br>" +
+                "&nbsp;&nbsp;- Bulk Disable Token Bar: Revert token bar fallback settings for all traps<br>" +
+                "&nbsp;&nbsp;- Options: bar1, bar2, bar3 (defaults to bar1 if not specified)" +
                 "}}",
                 "{{Lighting Controls (New!)=" +
                 "• Wall Commands: Hide, reveal, move, or change layer of Dynamic Lighting walls.<br>" +
