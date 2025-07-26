@@ -638,8 +638,11 @@ const TrapSystem = {
                 autoReleaseMode: "off", // "off", "timer", "player", "hybrid"
                 autoReleaseTimer: 30, // seconds
                 autoReleaseMessage: null, // Custom message when auto-releasing
-                // Player menu setting
-                playerMenu: false, // Controls whether players see interaction menus (default: off)
+                    // Player menu setting
+                    playerMenu: false, // Controls whether players see interaction menus (default: off)
+                    // Proximity settings
+                    proximityRequired: false, // Require players to be within range to interact
+                    proximityRange: 5, // Range in feet for proximity requirement
                 rawTriggerBlock: null, // For debugging or preserving unparsed parts
                 rawDetectionBlock: null // For debugging
             };
@@ -727,6 +730,13 @@ const TrapSystem = {
                             trapData.autoReleaseMessage = value;
                             break;
                         case "playermenu": trapData.playerMenu = value.toLowerCase() === 'on'; break;
+                        case "proximityrequired": trapData.proximityRequired = value.toLowerCase() === 'on'; break;
+                        case "proximityrange": 
+                            const rangeVal = parseInt(value, 10);
+                            if (!isNaN(rangeVal) && rangeVal > 0) {
+                                trapData.proximityRange = rangeVal;
+                            }
+                            break;
                         case "position":
                             const posLc = value.toLowerCase();
                             if (posLc === "center" || posLc === "intersection") {
@@ -1216,8 +1226,9 @@ const TrapSystem = {
                 '{{name=🎯 Trap System Help}}',
                 '{{About=The Trap System allows you to create and manage traps, skill checks, and interactions. Traps can be triggered by movement or manually.}}',
                 '{{Setup Traps=',
-                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})',
-                `[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})`,
+                '[🎯 Setup Standard Trap](!trapsystem setup ?{Uses|1} ?{Main Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes} ?{Optional Macro 2 - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Optional Macro 3 - #MacroName, &quot;!Command&quot;, &quot;Chat Text&quot; - Note: remember to use quotes|None} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})\n',
+                '[🔍 Setup Interaction Trap](!trapsystem setupinteraction ?{Uses|1} ?{Primary Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Success Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{Failure Macro - #MacroName, &quot;!cmd&quot;, &quot;Chat Text&quot;, &quot;^｛template｝&quot; - Note: remember to use quotes|None} ?{First Check Type|${skillListForQuery}} ?{First Check DC|10} ?{Second Check Type|None|${skillListForQuery}} ?{Second Check DC|10} ?{Movement Trigger Enabled|true|false} ?{Movement - Note: If you select --Grid-- please adjust via the GM Notes|Intersection|Center|Grid} ?{Auto Trigger|false|true} ?{Auto Release Mode|off|timer|player|hybrid} ?{Auto Release Timer - seconds|30} ?{Auto Release Message - Use &quot;Message Here&quot;|&quot;Default release message&quot;})\n',
+                '[👥 Player Interaction](!trapsystem playerinteraction ?{Setting|on|off} ?{Proximity Range - feet|10})\n',
                 '[🛠️ Setup Detection](!trapsystem passivemenu)}}',
                 '{{Trap Control=',
                 '[🔄 Toggle](!trapsystem toggle) - Toggle selected trap on/off\n',
@@ -1245,6 +1256,7 @@ const TrapSystem = {
                 '• <b style="color:#f04747;">Skill Checks:</b> Interaction traps accept advantage/disadvantage.<br>',
                 '• <b style="color:#f04747;">Auto-Release:</b> Set traps to automatically release tokens after a timer, allow player release requests, or both (hybrid mode).<br>',
                 '• <b style="color:#f04747;">Auto-Release Messages:</b> Messages with spaces MUST be wrapped in <span style="color:#ffcb05">"double quotes"</span> or use underscores/hyphens instead of spaces.<br>',
+                '• <b style="color:#f04747;">Player Interaction:</b> Use <span style="color:#ffcb05">!trapsystem playerinteraction on 10</span> to enable player menus with 10ft proximity requirement in one command.<br>',
                 '• <b style="color:#f04747;">Bulk Token Bar:</b> Use the bulk enable command to quickly set token bar fallback for all traps when the experimental API is unavailable.}}'
             ].join(' ');
             sendChat(target, `/w GM ${helpMenu}`);
@@ -1423,6 +1435,84 @@ const TrapSystem = {
             const mapUnitDistance = (pixelDistance / pageSettings.gridSize) * pageSettings.scale;
             
             return { pixelDistance, mapUnitDistance };
+        },
+
+        /**
+         * Check if a player-controlled token meets proximity requirements for a trap
+         * @param {Graphic} triggeredToken - The token that triggered the trap
+         * @param {Graphic} trapToken - The trap token
+         * @param {Object} trapData - The parsed trap data
+         * @returns {Object} - {isValid: boolean, playerIds: Array, warningMessage: string}
+         */
+        checkPlayerProximityRequirement(triggeredToken, trapToken, trapData) {
+            // If no proximity requirement, always valid
+            if (!trapData.proximityRequired || trapData.type !== 'interaction') {
+                return { isValid: true, playerIds: [], warningMessage: null };
+            }
+
+            // Get the controlling players for the triggered token
+            const characterId = triggeredToken.get("represents");
+            let playerIds = [];
+            if (characterId) {
+                const character = getObj("character", characterId);
+                if (character) {
+                    const controlledBy = (character.get("controlledby") || "").split(",");
+                    // Check for direct control OR "all players" control
+                    playerIds = controlledBy.filter(pid => pid && !TrapSystem.utils.playerIsGM(pid));
+                    // If character is controlled by "all", add all non-GM players
+                    if (controlledBy.includes("all")) {
+                        const allPlayers = findObjs({ _type: "player" });
+                        allPlayers.forEach(player => {
+                            if (!TrapSystem.utils.playerIsGM(player.id) && !playerIds.includes(player.id)) {
+                                playerIds.push(player.id);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // If no player controls this token, it's valid (GM-controlled)
+            if (playerIds.length === 0) {
+                return { isValid: true, playerIds: [], warningMessage: null };
+            }
+
+            // Check proximity for player-controlled tokens
+            const { mapUnitDistance } = TrapSystem.utils.calculateTokenDistance(triggeredToken, trapToken);
+            
+            if (mapUnitDistance > trapData.proximityRange) {
+                const warningMessage = `❌ You must be within ${trapData.proximityRange} feet to interact with this trap. (Current distance: ${mapUnitDistance.toFixed(1)} feet)`;
+                return { 
+                    isValid: false, 
+                    playerIds: playerIds, 
+                    warningMessage: warningMessage 
+                };
+            }
+
+            return { isValid: true, playerIds: playerIds, warningMessage: null };
+        },
+
+        /**
+         * Find player-controlled tokens on the same page as a trap
+         * @param {string} playerId - The player ID to find tokens for
+         * @param {Graphic} trapToken - The trap token to check against
+         * @returns {Array} - Array of player-controlled tokens on the same page
+         */
+        findPlayerTokensOnPage(playerId, trapToken) {
+            const pageId = trapToken.get("_pageid");
+            
+            // Get all tokens on the same page as the trap
+            const pageTokens = findObjs({ _type: "graphic", _pageid: pageId });
+            
+            return pageTokens.filter(token => {
+                const characterId = token.get("represents");
+                if (!characterId) return false;
+                
+                const character = getObj("character", characterId);
+                if (!character) return false;
+                
+                const controlledBy = (character.get("controlledby") || "").split(",");
+                return controlledBy.includes(playerId) || controlledBy.includes("all");
+            });
         },
 
         // Calculate dynamic aura radius to achieve a consistent visual size
@@ -1734,6 +1824,14 @@ const TrapSystem = {
             // Player menu setting
             if (trapData.playerMenu !== undefined) {
                 triggerSettings.push(`playerMenu:[${trapData.playerMenu ? 'on' : 'off'}]`);
+            }
+            
+            // Proximity settings
+            if (trapData.proximityRequired !== undefined) {
+                triggerSettings.push(`proximityRequired:[${trapData.proximityRequired ? 'on' : 'off'}]`);
+            }
+            if (trapData.proximityRange !== undefined && trapData.proximityRange > 0) {
+                triggerSettings.push(`proximityRange:[${trapData.proximityRange}]`);
             }
         
             let posStr = "intersection"; 
@@ -2218,6 +2316,16 @@ const TrapSystem = {
             if(!data || !data.isArmed || data.currentUses <= 0) {
                 TrapSystem.utils.chat('❌ Trap cannot be triggered (disarmed or out of uses)');
                 return;
+            }
+
+            // Check proximity requirement for player-controlled tokens
+            const proximityCheck = TrapSystem.utils.checkPlayerProximityRequirement(triggeredToken, trapToken, data);
+            if (!proximityCheck.isValid) {
+                // Send warning to the player(s) who control this token
+                proximityCheck.playerIds.forEach(playerId => {
+                    TrapSystem.utils.whisper(playerId, proximityCheck.warningMessage);
+                });
+                return; // Don't trigger the trap
             }
 
             // Check if this is a player-triggered interaction trap with playerMenu enabled
@@ -2737,6 +2845,11 @@ const TrapSystem = {
                 const playerMenuIcon = data.playerMenu ? "👥" : "👤";
                 const playerMenuText = data.playerMenu ? "Player Menu On" : "Player Menu Off";
                 msg.push(`{{Player Menu=${playerMenuIcon} ${playerMenuText}}}`);
+                
+                // Proximity setting (only show for interaction traps)
+                const proximityIcon = data.proximityRequired ? "🔒" : "🔓";
+                const proximityText = data.proximityRequired ? `Proximity Required (${data.proximityRange}ft)` : "No Proximity Required";
+                msg.push(`{{Proximity=${proximityIcon} ${proximityText}}}`);
             }
 
 
@@ -2802,6 +2915,35 @@ const TrapSystem = {
 
             // Check if this is a player trigger (not GM)
             const isPlayerTrigger = playerId && !TrapSystem.utils.playerIsGM(playerId);
+
+            // Check proximity requirement for player triggers
+            if (isPlayerTrigger && trapData.proximityRequired && trapData.type === 'interaction') {
+                // Find the player's tokens on the same page as the trap
+                const playerTokens = TrapSystem.utils.findPlayerTokensOnPage(playerId, trapToken);
+
+                if (playerTokens.length > 0) {
+                    // Check proximity for the closest token
+                    let closestToken = playerTokens[0];
+                    let closestDistance = Infinity;
+                    
+                    for (const token of playerTokens) {
+                        const { mapUnitDistance } = TrapSystem.utils.calculateTokenDistance(token, trapToken);
+                        if (mapUnitDistance < closestDistance) {
+                            closestDistance = mapUnitDistance;
+                            closestToken = token;
+                        }
+                    }
+                    
+                    if (closestDistance > trapData.proximityRange) {
+                        const warningMessage = `❌ You must be within ${trapData.proximityRange} feet to interact with this trap. (Current distance: ${closestDistance.toFixed(1)} feet)`;
+                        TrapSystem.utils.whisper(playerId, warningMessage);
+                        return;
+                    }
+                } else {
+                    TrapSystem.utils.whisper(playerId, `❌ Unable to find your character token on this page to check proximity.`);
+                    return;
+                }
+            }
 
             // If "interaction" type, handle based on playerMenu setting and who triggered it
             if (trapData.type === 'interaction') {
@@ -5338,7 +5480,7 @@ const TrapSystem = {
                         const encodedNewGmNotes = encodeURIComponent(newGmNotesString);
                         trapToken.set("gmnotes", encodedNewGmNotes);
                         TrapSystem.passive.updateAuraForDetectionRange(trapToken);
-                        updatedTrapCount++;
+                updatedTrapCount++;
                     } catch (e) {
                         TrapSystem.utils.log(`Error updating trap ${trapToken.id}: ${e.message}`, 'error');
                     }
@@ -5363,7 +5505,7 @@ const TrapSystem = {
                         const encodedNewGmNotes = encodeURIComponent(newGmNotesString);
                         trapToken.set("gmnotes", encodedNewGmNotes);
                         TrapSystem.passive.updateAuraForDetectionRange(trapToken);
-                        updatedTrapCount++;
+                updatedTrapCount++;
                     } catch (e) {
                         TrapSystem.utils.log(`Error updating trap ${trapToken.id}: ${e.message}`, 'error');
                     }
@@ -5821,7 +5963,7 @@ on("chat:message",(msg) => {
 
         // Whitelist 'interact' as it gets the trap token ID from arguments.
         // Sub-actions within 'interact' will handle specific token needs (e.g., a triggering character for a skill check).
-        if (!selectedToken && !["enable", "disable", "toggle", "status", "help", "allowall", "exportmacros", "resetstates", "resetmacros", "fullreset", "allowmovement", "resetdetection", "interact", "hidedetection", "showdetection", "bulkenabletokenbar", "bulkdisabletokenbar", "playerinteract", "playermenu", "playerexplain", "playerdone"].includes(action.toLowerCase())) {
+        if (!selectedToken && !["enable", "disable", "toggle", "status", "help", "allowall", "exportmacros", "resetstates", "resetmacros", "fullreset", "allowmovement", "resetdetection", "interact", "hidedetection", "showdetection", "bulkenabletokenbar", "bulkdisabletokenbar", "playerinteract", "playerinteraction", "playerexplain", "playerdone"].includes(action.toLowerCase())) {
             TrapSystem.utils.chat('❌ Error: No token selected for this action!');
             TrapSystem.utils.log(`[API Handler] Action '${action}' requires a selected token, but none was found.`, 'warn');
                 return;
@@ -6377,16 +6519,39 @@ on("chat:message",(msg) => {
                 TrapSystem.commands.handlePlayerInteraction(trapToken, msg.playerid, triggeredTokenId);
                 break;
             }
-            case "playermenu": {
-                // Toggle player menu setting for a trap
+            case "playerinteraction": {
+                // Unified command for player interaction settings
+                // Usage: !trapsystem playerinteraction [on/off] [proximity_range]
+                // Examples:
+                //   !trapsystem playerinteraction on 10     (Enable player menu + 10ft proximity)
+                //   !trapsystem playerinteraction on        (Enable player menu, no proximity)
+                //   !trapsystem playerinteraction off       (Disable player menu and proximity)
+                //   !trapsystem playerinteraction off 5     (Disable player menu, set proximity to 5ft for future use)
+                
                 if (args.length < 3) {
-                    TrapSystem.utils.chat("❌ Missing parameters for playermenu command! Expected: !trapsystem playermenu [on/off]");
+                    TrapSystem.utils.chat("❌ Missing parameters for playerinteraction command!");
+                    TrapSystem.utils.chat("Expected: !trapsystem playerinteraction [on/off] [proximity_range]");
+                    TrapSystem.utils.chat("Examples:");
+                    TrapSystem.utils.chat("  !trapsystem playerinteraction on 10     (Enable player menu + 10ft proximity)");
+                    TrapSystem.utils.chat("  !trapsystem playerinteraction on        (Enable player menu, no proximity)");
+                    TrapSystem.utils.chat("  !trapsystem playerinteraction off       (Disable player menu and proximity)");
                     return;
                 }
+                
                 const setting = args[2].toLowerCase();
                 if (setting !== 'on' && setting !== 'off') {
-                    TrapSystem.utils.chat("❌ Invalid setting for playermenu! Use 'on' or 'off'");
+                    TrapSystem.utils.chat("❌ Invalid setting for playerinteraction! Use 'on' or 'off'");
                     return;
+                }
+                
+                // Parse proximity range (optional)
+                let proximityRange = null;
+                if (args.length >= 4) {
+                    proximityRange = parseInt(args[3], 10);
+                    if (isNaN(proximityRange) || proximityRange <= 0) {
+                        TrapSystem.utils.chat("❌ Invalid proximity range! Must be a positive number.");
+                        return;
+                    }
                 }
                 
                 if (!selectedToken || !TrapSystem.utils.isTrap(selectedToken)) {
@@ -6400,18 +6565,80 @@ on("chat:message",(msg) => {
                     return;
                 }
                 
-                // Update the playerMenu setting
+                // Update the settings
                 trapData.playerMenu = setting === 'on';
+                
+                if (setting === 'on' && proximityRange !== null) {
+                    // Enable player menu with proximity requirement
+                    trapData.proximityRequired = true;
+                    trapData.proximityRange = proximityRange;
+                } else if (setting === 'on' && proximityRange === null) {
+                    // Enable player menu without proximity requirement
+                    trapData.proximityRequired = false;
+                } else if (setting === 'off') {
+                    // Disable player menu
+                    trapData.playerMenu = false;
+                    // Keep proximity settings for future use if specified
+                    if (proximityRange !== null) {
+                        trapData.proximityRequired = true;
+                        trapData.proximityRange = proximityRange;
+                    } else {
+                        trapData.proximityRequired = false;
+                    }
+                }
+                
+                // Reconstruct the GM notes with the new settings
+                const newNotes = TrapSystem.utils.constructGmNotesFromTrapData(trapData);
+                if (newNotes) {
+                    try {
+                        selectedToken.set("gmnotes", encodeURIComponent(newNotes));
+                        
+                        // Create status message
+                        let statusMessage = `✅ Player interaction settings updated:`;
+                        statusMessage += `\n🎯 Player Menu: ${trapData.playerMenu ? 'ON' : 'OFF'}`;
+                        
+                        if (trapData.proximityRequired) {
+                            statusMessage += `\n🔒 Proximity Required: ${trapData.proximityRange} feet`;
+                        } else {
+                            statusMessage += `\n🔓 Proximity Required: OFF`;
+                        }
+                        
+                        TrapSystem.utils.chat(statusMessage);
+                        TrapSystem.triggers.getTrapStatus(selectedToken); // Show updated status
+                    } catch (e) {
+                        TrapSystem.utils.log(`Error updating player interaction settings: ${e.message}`, 'error');
+                        TrapSystem.utils.chat("❌ Error updating trap configuration!");
+                    }
+                } else {
+                    TrapSystem.utils.chat("❌ Error reconstructing trap configuration!");
+                }
+                break;
+            }
+            case "disableproximity": {
+                // Disable proximity requirement for a trap
+                if (!selectedToken || !TrapSystem.utils.isTrap(selectedToken)) {
+                    TrapSystem.utils.chat("❌ No valid trap token selected!");
+                    return;
+                }
+                
+                const trapData = TrapSystem.utils.parseTrapNotes(selectedToken.get("gmnotes"), selectedToken);
+                if (!trapData) {
+                    TrapSystem.utils.chat("❌ Invalid trap configuration!");
+                    return;
+                }
+                
+                // Update the proximity settings
+                trapData.proximityRequired = false;
                 
                 // Reconstruct the GM notes with the new setting
                 const newNotes = TrapSystem.utils.constructGmNotesFromTrapData(trapData);
                 if (newNotes) {
                     try {
                         selectedToken.set("gmnotes", encodeURIComponent(newNotes));
-                        TrapSystem.utils.chat(`✅ Player menu setting updated to: ${setting.toUpperCase()}`);
+                        TrapSystem.utils.chat(`✅ Proximity requirement disabled`);
                         TrapSystem.triggers.getTrapStatus(selectedToken); // Show updated status
                     } catch (e) {
-                        TrapSystem.utils.log(`Error updating player menu setting: ${e.message}`, 'error');
+                        TrapSystem.utils.log(`Error updating proximity setting: ${e.message}`, 'error');
                         TrapSystem.utils.chat("❌ Error updating trap configuration!");
                     }
                 } else {
