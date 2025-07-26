@@ -2260,8 +2260,8 @@ const TrapSystem = {
             }
 
             // Determine the point to pass to calculateTrapPosition.
-            // If originalIntersectionPoint is null (e.g., from a direct overlap), use the center of the moved token.
-            const effectiveIntersectionPoint = originalIntersectionPoint || TrapSystem.utils.getTokenCenter(movedToken);
+            // If originalIntersectionPoint is null (e.g., from a direct overlap), use the center of the triggered token.
+            const effectiveIntersectionPoint = originalIntersectionPoint || TrapSystem.utils.getTokenCenter(triggeredToken);
             TrapSystem.utils.log(`[handleTrapTrigger] Effective intersection for calc: (${effectiveIntersectionPoint.x.toFixed(2)}, ${effectiveIntersectionPoint.y.toFixed(2)})`, 'debug');
 
             const calculatedPositions = TrapSystem.utils.calculateTrapPosition(triggeredToken, trapToken, effectiveIntersectionPoint);
@@ -5329,10 +5329,20 @@ const TrapSystem = {
             let updatedTrapCount = 0;
 
             allTraps.forEach(trapToken => {
-                // Use the existing handleSetPassiveProperty function to properly set the token bar fallback
-                const commandParams = ["tokenbar", trapToken.id, tokenBarType];
-                TrapSystem.passive.handleSetPassiveProperty(commandParams, playerId);
-                updatedTrapCount++;
+                // Directly update the trap data without showing menus
+                const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken);
+                if (trapData) {
+                    trapData.ppTokenBarFallback = tokenBarType;
+                    const newGmNotesString = TrapSystem.utils.constructGmNotesFromTrapData(trapData);
+                    try {
+                        const encodedNewGmNotes = encodeURIComponent(newGmNotesString);
+                        trapToken.set("gmnotes", encodedNewGmNotes);
+                        TrapSystem.passive.updateAuraForDetectionRange(trapToken);
+                        updatedTrapCount++;
+                    } catch (e) {
+                        TrapSystem.utils.log(`Error updating trap ${trapToken.id}: ${e.message}`, 'error');
+                    }
+                }
             });
 
             const message = `✅ Token bar fallback (${tokenBarType}) enabled for ${updatedTrapCount} traps.`;
@@ -5344,10 +5354,20 @@ const TrapSystem = {
             let updatedTrapCount = 0;
 
             allTraps.forEach(trapToken => {
-                // Use the existing handleSetPassiveProperty function to disable the token bar fallback
-                const commandParams = ["tokenbar", trapToken.id, "none"];
-                TrapSystem.passive.handleSetPassiveProperty(commandParams, playerId);
-                updatedTrapCount++;
+                // Directly update the trap data without showing menus
+                const trapData = TrapSystem.utils.parseTrapNotes(trapToken.get("gmnotes"), trapToken);
+                if (trapData) {
+                    trapData.ppTokenBarFallback = null;
+                    const newGmNotesString = TrapSystem.utils.constructGmNotesFromTrapData(trapData);
+                    try {
+                        const encodedNewGmNotes = encodeURIComponent(newGmNotesString);
+                        trapToken.set("gmnotes", encodedNewGmNotes);
+                        TrapSystem.passive.updateAuraForDetectionRange(trapToken);
+                        updatedTrapCount++;
+                    } catch (e) {
+                        TrapSystem.utils.log(`Error updating trap ${trapToken.id}: ${e.message}`, 'error');
+                    }
+                }
             });
 
             const message = `✅ Token bar fallback disabled for ${updatedTrapCount} traps.`;
