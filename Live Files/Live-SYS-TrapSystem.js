@@ -3454,21 +3454,15 @@ const TrapSystem = {
                     // The "smart" path.
                     if (trappedToken) {
                         const charId = trappedToken.get("represents");
-                        TrapSystem.utils.log(`[handleInteraction] explain case - trappedToken: ${trappedToken.id}, charId: ${charId}`, 'debug');
                         if (charId) {
                             // Use the new, reliable helper function to set up the state.
                             const success = TrapSystem.menu.prepareSkillCheckState(token, playerid, triggeredTokenId, charId);
-                            TrapSystem.utils.log(`[handleInteraction] prepareSkillCheckState result: ${success}`, 'debug');
                             if (success) {
                                 // If state was prepared, we can skip to the response menu.
                                 TrapSystem.menu.showGMResponseMenu(token, playerid, triggeredTokenId);
                                 return;
                             }
-                        } else {
-                            TrapSystem.utils.log(`[handleInteraction] No character ID found for token ${trappedToken.id}`, 'debug');
                         }
-                    } else {
-                        TrapSystem.utils.log(`[handleInteraction] No trapped token found for ID ${triggeredTokenId}`, 'debug');
                     }
                     // If the smart path fails for any reason, fall back to the manual path.
                     TrapSystem.menu.showCharacterSelectionMenu(token, playerid, triggeredTokenId);
@@ -3478,9 +3472,8 @@ const TrapSystem = {
 
         // Internal helper to standardize skill check state creation
         prepareSkillCheckState(trapToken, gmPlayerId, triggeredTokenId, characterId) {
-            TrapSystem.utils.log(`[prepareSkillCheckState] Called with: trapToken: ${trapToken?.id}, gmPlayerId: ${gmPlayerId}, triggeredTokenId: ${triggeredTokenId}, characterId: ${characterId}`, 'debug');
             if (!trapToken || !gmPlayerId || !triggeredTokenId || !characterId) {
-                TrapSystem.utils.log(`Error: prepareSkillCheckState called with missing arguments. trapToken: ${!!trapToken}, gmPlayerId: ${!!gmPlayerId}, triggeredTokenId: ${!!triggeredTokenId}, characterId: ${!!characterId}`, 'error');
+                TrapSystem.utils.log("Error: prepareSkillCheckState called with missing arguments.", 'error');
                 return false;
             }
 
